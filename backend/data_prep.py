@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import datetime
 import os
+import random # NEW: Import random for generating replenishment time
 
 # Path to your downloaded Kaggle dataset: "Retail Store Inventory Forecasting Dataset"
 # This file should be in the same directory as this script.
@@ -13,6 +14,7 @@ def prepare_firestore_data(csv_path):
     Reads the retail inventory CSV, processes it, and generates
     NDJSON files suitable for MongoDB (and Firestore) import.
     Generates 'inventory.json', 'products.json', and 'stores.json' locally.
+    Adds a random 'min_replenish_time' to products.
     """
     if not os.path.exists(csv_path):
         print(f"Error: Dataset not found at '{csv_path}'.")
@@ -40,7 +42,8 @@ def prepare_firestore_data(csv_path):
                     'product_id': product_id,
                     'category': row['Category'],
                     'price': float(row['Price']),
-                    'name': f"Product {product_id}" # Mock name
+                    'name': f"Product {product_id}", # Mock name
+                    'min_replenish_time': random.randint(3, 20) # NEW: Random replenishment time (3-20 days)
                 }
         products_list = list(products_data.values())
         print(f"Prepared {len(products_list)} unique products.")
@@ -65,7 +68,8 @@ def prepare_firestore_data(csv_path):
             product_id = str(row['Product ID'])
             doc_key = f"{store_id}_{product_id}" # Using a key to ensure uniqueness per store-product pair
 
-            inventory_items[doc_key] = { # This will keep the last entry if duplicates exist for same store-product
+            # This will keep the last entry if duplicates exist for same store-product in the CSV
+            inventory_items[doc_key] = { 
                 'store_id': store_id,
                 'product_id': product_id,
                 'current_stock': int(row['Inventory Level']),
@@ -96,8 +100,6 @@ def prepare_firestore_data(csv_path):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    # Ensure this script runs from the backend directory or specify full path
     current_dir = os.path.dirname(os.path.abspath(__file__))
     csv_file_path = os.path.join(current_dir, DATASET_PATH)
     prepare_firestore_data(csv_file_path)
-

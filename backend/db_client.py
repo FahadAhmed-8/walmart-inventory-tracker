@@ -2,14 +2,15 @@
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
-import urllib.parse  # Import urllib.parse for URL escaping
+import urllib.parse
+import certifi # For SSL certificates
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Get MongoDB URI and database name from environment variables
 MONGO_URI = os.getenv("MONGO_URI")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "walmart_inventory_db")  # Default if not set
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "walmart_inventory_db")
 
 client = None
 db = None
@@ -17,7 +18,7 @@ db = None
 def connect_to_mongodb():
     """
     Establishes a connection to MongoDB Atlas.
-    Handles URL escaping for password in the connection string.
+    Handles URL escaping for password in the connection string and uses certifi for SSL.
     """
     global client, db
     if client is not None and db is not None:
@@ -28,22 +29,29 @@ def connect_to_mongodb():
 
     try:
         print("Connecting to MongoDB Atlas...")
-
+        
         parsed_uri = urllib.parse.urlparse(MONGO_URI)
         username = parsed_uri.username
         password = parsed_uri.password
-
+        
+        # Reconstruct the URI with URL-escaped credentials if they exist
         if username and password:
             escaped_username = urllib.parse.quote_plus(username)
             escaped_password = urllib.parse.quote_plus(password)
+            # Reconstruct only the userinfo part for netloc
             netloc_with_creds = f"{escaped_username}:{escaped_password}@{parsed_uri.hostname}"
             mongo_uri_escaped = parsed_uri._replace(netloc=netloc_with_creds).geturl()
         else:
-            mongo_uri_escaped = MONGO_URI
+            mongo_uri_escaped = MONGO_URI # Use as is if no username/password in URI
 
-        client = MongoClient(mongo_uri_escaped)
-        client.admin.command('ping')
-
+        # Use tlsCAFile from certifi for SSL. We will KEEP tlsAllowInvalidCertificates=True for hackathon
+        # as it was required to get it working for you due to environment constraints.
+        # In a production setup, tlsAllowInvalidCertificates=True should be REMOVED.
+        client = MongoClient(mongo_uri_escaped, tlsCAFile=certifi.where(), tlsAllowInvalidCertificates=True)
+        
+        # The ping command verifies the connection
+        client.admin.command('ping') 
+        
         db = client[MONGO_DB_NAME]
         print(f"Successfully connected to MongoDB database: {MONGO_DB_NAME}")
         return db

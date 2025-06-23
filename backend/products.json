@@ -1,20 +1,20 @@
-{"product_id": "P0001", "category": "Groceries", "price": "33.5", "name": "Product P0001"}
-{"product_id": "P0002", "category": "Toys", "price": "63.01", "name": "Product P0002"}
-{"product_id": "P0003", "category": "Toys", "price": "27.99", "name": "Product P0003"}
-{"product_id": "P0004", "category": "Toys", "price": "32.72", "name": "Product P0004"}
-{"product_id": "P0005", "category": "Electronics", "price": "73.64", "name": "Product P0005"}
-{"product_id": "P0006", "category": "Groceries", "price": "76.83", "name": "Product P0006"}
-{"product_id": "P0007", "category": "Furniture", "price": "34.16", "name": "Product P0007"}
-{"product_id": "P0008", "category": "Clothing", "price": "97.99", "name": "Product P0008"}
-{"product_id": "P0009", "category": "Electronics", "price": "20.74", "name": "Product P0009"}
-{"product_id": "P0010", "category": "Toys", "price": "59.99", "name": "Product P0010"}
-{"product_id": "P0011", "category": "Furniture", "price": "58.53", "name": "Product P0011"}
-{"product_id": "P0012", "category": "Clothing", "price": "58.25", "name": "Product P0012"}
-{"product_id": "P0013", "category": "Toys", "price": "43.6", "name": "Product P0013"}
-{"product_id": "P0014", "category": "Clothing", "price": "78.11", "name": "Product P0014"}
-{"product_id": "P0015", "category": "Clothing", "price": "92.99", "name": "Product P0015"}
-{"product_id": "P0016", "category": "Electronics", "price": "21.9", "name": "Product P0016"}
-{"product_id": "P0017", "category": "Toys", "price": "21.07", "name": "Product P0017"}
-{"product_id": "P0018", "category": "Clothing", "price": "19.57", "name": "Product P0018"}
-{"product_id": "P0019", "category": "Clothing", "price": "73.28", "name": "Product P0019"}
-{"product_id": "P0020", "category": "Toys", "price": "30.24", "name": "Product P0020"}
+{"product_id": "P0001", "category": "Groceries", "price": "33.5", "name": "Product P0001", "min_replenish_time": 19}
+{"product_id": "P0002", "category": "Toys", "price": "63.01", "name": "Product P0002", "min_replenish_time": 8}
+{"product_id": "P0003", "category": "Toys", "price": "27.99", "name": "Product P0003", "min_replenish_time": 13}
+{"product_id": "P0004", "category": "Toys", "price": "32.72", "name": "Product P0004", "min_replenish_time": 18}
+{"product_id": "P0005", "category": "Electronics", "price": "73.64", "name": "Product P0005", "min_replenish_time": 12}
+{"product_id": "P0006", "category": "Groceries", "price": "76.83", "name": "Product P0006", "min_replenish_time": 20}
+{"product_id": "P0007", "category": "Furniture", "price": "34.16", "name": "Product P0007", "min_replenish_time": 16}
+{"product_id": "P0008", "category": "Clothing", "price": "97.99", "name": "Product P0008", "min_replenish_time": 6}
+{"product_id": "P0009", "category": "Electronics", "price": "20.74", "name": "Product P0009", "min_replenish_time": 12}
+{"product_id": "P0010", "category": "Toys", "price": "59.99", "name": "Product P0010", "min_replenish_time": 10}
+{"product_id": "P0011", "category": "Furniture", "price": "58.53", "name": "Product P0011", "min_replenish_time": 14}
+{"product_id": "P0012", "category": "Clothing", "price": "58.25", "name": "Product P0012", "min_replenish_time": 4}
+{"product_id": "P0013", "category": "Toys", "price": "43.6", "name": "Product P0013", "min_replenish_time": 6}
+{"product_id": "P0014", "category": "Clothing", "price": "78.11", "name": "Product P0014", "min_replenish_time": 4}
+{"product_id": "P0015", "category": "Clothing", "price": "92.99", "name": "Product P0015", "min_replenish_time": 4}
+{"product_id": "P0016", "category": "Electronics", "price": "21.9", "name": "Product P0016", "min_replenish_time": 16}
+{"product_id": "P0017", "category": "Toys", "price": "21.07", "name": "Product P0017", "min_replenish_time": 15}
+{"product_id": "P0018", "category": "Clothing", "price": "19.57", "name": "Product P0018", "min_replenish_time": 10}
+{"product_id": "P0019", "category": "Clothing", "price": "73.28", "name": "Product P0019", "min_replenish_time": 18}
+{"product_id": "P0020", "category": "Toys", "price": "30.24", "name": "Product P0020", "min_replenish_time": 7}

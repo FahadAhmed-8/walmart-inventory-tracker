@@ -1,0 +1,23 @@
+# .gitignore at /walmart_inventory_app/
+
+# Python specific (backend)
+backend/.env
+backend/__pycache__/
+backend/*.pyc
+backend/venv/
+backend/retail_inventory_forecast.csv # Original large dataset
+backend/*.json # Generated JSON files (products.json, stores.json, inventory.json) - can be re-generated
+
+# Node/React specific (frontend)
+frontend/node_modules/
+frontend/.env
+frontend/build/
+
+# General IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

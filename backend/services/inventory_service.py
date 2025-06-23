@@ -416,9 +416,9 @@ def get_low_stock_alerts_data(db, days_left_threshold, store_filter_id=None):
                 "store_id": store_id,
                 "current_stock": current_stock,
                 "daily_demand_sim": daily_demand_sim,
-                "min_replenish_time": min_replenish_time, # NEW: Add replenishment time
+                "min_replenish_time": min_replenish_time,
                 "days_remaining": round(days_remaining, 2),
-                "alert_category": alert_category, # NEW: Add alert category
+                "alert_category": alert_category,
                 "alert_reason": alert_reason,
                 "last_updated": item.get('last_updated')
             }
@@ -428,3 +428,65 @@ def get_low_stock_alerts_data(db, days_left_threshold, store_filter_id=None):
     critical_stock_items.sort(key=lambda x: x['days_remaining'])
 
     return critical_stock_items
+
+def get_overstocked_products_data(db, threshold_multiplier, days_for_demand, store_filter_id=None):
+    """
+    Identifies and returns products across all stores that are considered overstocked.
+    An item is overstocked if its current stock is greater than
+    (threshold_multiplier * (daily_sales_simulation_base * days_for_demand)).
+
+    Args:
+        db: The MongoDB database client instance.
+        threshold_multiplier (float): Multiplier for projected demand (e.g., 3.0 for 3x demand).
+        days_for_demand (int): Number of days to project demand for.
+        store_filter_id (str, optional): Filters alerts for a specific store.
+    """
+    overstocked_items = []
+
+    query_filter = {}
+    if store_filter_id:
+        query_filter['store_id'] = store_filter_id
+
+    # Fetch product names for a more descriptive alert
+    products_collection = db['products']
+    all_products_names = {}
+    for product_doc in products_collection.find({}):
+        all_products_names[product_doc['product_id']] = product_doc.get('name', 'Unknown Product')
+
+    for item in db.inventory.find(query_filter):
+        product_id = item.get('product_id')
+        store_id = item.get('store_id')
+        current_stock = item.get('current_stock', 0)
+        daily_demand_sim = item.get('daily_sales_simulation_base', 1)
+
+        projected_demand = daily_demand_sim * days_for_demand
+        
+        # Check for overstocked condition
+        if projected_demand > 0 and current_stock > (threshold_multiplier * projected_demand):
+            # Convert ObjectId to string and datetime to string for JSON serialization
+            item['_id'] = str(item['_id'])
+            if 'last_updated' in item and isinstance(item['last_updated'], datetime.datetime):
+                item['last_updated'] = item['last_updated'].strftime('%Y-%m-%d %H:%M:%S')
+            
+            overstock_info = {
+                "product_id": product_id,
+                "product_name": all_products_names.get(product_id, f"Product {product_id}"),
+                "store_id": store_id,
+                "current_stock": current_stock,
+                "daily_demand_sim": daily_demand_sim,
+                "projected_demand_for_X_days": round(projected_demand, 2),
+                "threshold_multiplier": threshold_multiplier,
+                "overstock_ratio": round(current_stock / projected_demand, 2) if projected_demand > 0 else "N/A",
+                "alert_reason": (
+                    f"Current stock ({current_stock}) is {round(current_stock / projected_demand, 2) if projected_demand > 0 else 'N/A'} times "
+                    f"the projected demand of {round(projected_demand, 2)} units over {days_for_demand} days "
+                    f"(threshold: {threshold_multiplier}x)."
+                ),
+                "last_updated": item.get('last_updated')
+            }
+            overstocked_items.append(overstock_info)
+
+    # Sort overstocked items by overstock_ratio descending (most overstocked first)
+    overstocked_items.sort(key=lambda x: x.get('overstock_ratio', 0) if isinstance(x.get('overstock_ratio'), (int, float)) else 0, reverse=True)
+
+    return overstocked_items

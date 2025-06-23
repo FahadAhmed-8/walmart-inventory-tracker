@@ -41,6 +41,41 @@
       margin-bottom: 10px;
     }
 
+    /* Main Navigation Styling */
+    .main-nav {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 30px;
+      gap: 15px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .main-nav button {
+      background-color: #ecf0f1; /* Light background for inactive tabs */
+      color: #34495e;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: none; /* Remove shadow for tab-like buttons */
+    }
+
+    .main-nav button:hover {
+      background-color: #dbe4e8;
+      transform: translateY(0); /* No lift effect on hover for tabs */
+    }
+
+    .main-nav button.active {
+      background-color: #3498db; /* Blue for active tab */
+      color: white;
+      border-color: #3498db;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+
     section.card {
       background-color: #fdfdfd;
       border: 1px solid #e0e0e0;
@@ -145,16 +180,14 @@
       list-style-type: none;
       padding: 0;
       margin: 0;
-      /* NEW: Vertical scroll for alert list */
-      max-height: 300px; /* Adjust to show desired number of items (e.g., 5-6 items) */
+      max-height: 300px;
       overflow-y: auto;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
-      padding: 10px; /* Add some padding inside the scrollable area */
+      padding: 10px;
       background-color: #fdfdfd;
     }
 
-    /* Styling for individual alert items based on category */
     .alert-item {
       background-color: #fdfdfd;
       border: 1px solid #e0e0e0;
@@ -165,11 +198,11 @@
       font-size: 0.95em;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03); /* Subtle shadow for list items */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
     }
 
     .alert-item:last-child {
-        margin-bottom: 0; /* No margin-bottom for the last item in the list */
+        margin-bottom: 0;
     }
 
     .alert-item p {
@@ -191,6 +224,7 @@
       margin-left: 5px;
     }
 
+    /* Understocked Categories */
     .alert-item.critical-out-of-stock {
       border-color: #c0392b;
       background-color: #fdedee;
@@ -199,7 +233,6 @@
         background-color: #c0392b;
     }
 
-
     .alert-item.critical-below-replenishment-lead-time {
       border-color: #e74c3c;
       background-color: #fbe6e6;
@@ -207,7 +240,6 @@
     .alert-item.critical-below-replenishment-lead-time .alert-category-label {
         background-color: #e74c3c;
     }
-
 
     .alert-item.warning-approaching-threshold {
       border-color: #f39c12;
@@ -222,6 +254,17 @@
         color: #666;
         font-size: 0.9em;
         margin-top: 5px;
+    }
+
+    /* Overstocked Alert Styling */
+    .alert-item.overstocked-alert {
+        border-color: #28a745;
+        background-color: #e6faed;
+    }
+    .alert-item .overstock-ratio-label {
+        font-weight: bold;
+        color: #28a745;
+        font-size: 1.1em;
     }
 
 
@@ -239,13 +282,13 @@
     }
 
     /* Recharts Chart Styling */
-    .chart-container-recharts { /* Renamed class for Recharts container */
+    .chart-container-recharts {
       margin-top: 20px;
       margin-bottom: 20px;
       background-color: #fff;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
-      overflow-x: auto; /* Horizontal scroll for chart */
+      overflow-x: auto;
       padding: 10px;
       min-width: 100%; 
     }
@@ -296,8 +339,6 @@
         width: 100%;
       }
       .chart-container-recharts {
-        min-width: unset; /* Remove min-width to allow full responsiveness */
+        min-width: unset;
       }
-      /* Recharts ResponsiveContainer handles width, but internal chart elements might overlap on very small screens.
-         Overflow-x auto on .chart-container-recharts helps if the chart content is wider than screen. */
     }

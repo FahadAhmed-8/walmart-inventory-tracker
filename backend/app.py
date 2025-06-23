@@ -16,7 +16,8 @@ from services.inventory_service import (
     record_receipt_transaction,
     process_sales_batch_csv,
     process_receipts_batch_csv,
-    get_low_stock_alerts_data
+    get_low_stock_alerts_data,
+    get_overstocked_products_data # NEW: Import overstocked data function
 )
 
 app = Flask(__name__)
@@ -29,7 +30,7 @@ def home():
     """
     A simple home route to confirm the backend is running.
     """
-    return "Walmart Inventory Management Backend is running! Access /inventory, /inventory/sale, /inventory/receipt, /inventory/low_stock_alerts."
+    return "Walmart Inventory Management Backend is running! Access /inventory, /inventory/sale, /inventory/receipt, /inventory/low_stock_alerts, /inventory/overstocked_alerts."
 
 @app.route('/inventory/<string:store_id>/<string:product_id>', methods=['GET'])
 def get_inventory(store_id, product_id):
@@ -202,6 +203,37 @@ def get_low_stock_alerts():
         print(f"Error fetching low stock alerts based on days: {e}")
         return jsonify({"error": f"An error occurred while fetching alerts: {str(e)}"}), 500
 
+@app.route('/inventory/overstocked_alerts', methods=['GET']) # NEW ENDPOINT
+def get_overstocked_alerts():
+    """
+    Identifies and returns products across all stores that are considered overstocked.
+    
+    Query Parameters:
+    - `threshold_multiplier`: Float, e.g., 3.0 for 3x demand (default: 3.0).
+    - `days_for_demand`: Integer, number of days to project demand for (default: 30).
+    - `store_id` (optional): Filter alerts for a specific store.
+    """
+    threshold_multiplier_str = request.args.get('threshold_multiplier', '3.0')
+    days_for_demand_str = request.args.get('days_for_demand', '30')
+    store_filter_id = request.args.get('store_id')
+
+    try:
+        threshold_multiplier = float(threshold_multiplier_str)
+        days_for_demand = int(days_for_demand_str)
+        if threshold_multiplier <= 0 or days_for_demand <= 0:
+            return jsonify({"error": "threshold_multiplier and days_for_demand must be positive values."}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid 'threshold_multiplier' or 'days_for_demand' value."}), 400
+
+    try:
+        db = get_db()
+        overstocked_items = get_overstocked_products_data(db, threshold_multiplier, days_for_demand, store_filter_id)
+        return jsonify(overstocked_items), 200
+    except Exception as e:
+        print(f"Error fetching overstocked alerts: {e}")
+        return jsonify({"error": f"An error occurred while fetching overstocked alerts: {str(e)}"}), 500
+
+
 # --- Running the Flask Application ---
 if __name__ == '__main__':
     # Ensure MongoDB connection is established before starting the Flask app
@@ -215,6 +247,7 @@ if __name__ == '__main__':
     # IMPORTANT: load_initial_inventory_data() from services should ONLY be uncommented ONCE
     # for initial data loading (if you re-created backend folder entirely).
     # After successful load, keep it commented out.
-    # load_initial_inventory_data(get_db()) # <-- UNCOMMENT THIS ONLY IF YOU NEED TO RELOAD DATA
+    # load_initial_inventory_data(get_db()) # <-- THIS LINE MUST REMAIN COMMENTED OUT
     
     app.run(debug=True, host='0.0.0.0', port=5000)
+

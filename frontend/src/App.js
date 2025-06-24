@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import './App.css';
 import InventoryActionsPage from './pages/InventoryActionsPage';
 import AlertsAndOverstockPage from './pages/AlertsAndOverstockPage';
+import DemandForecastPage from './pages/DemandForecastPage'; // NEW: Import DemandForecastPage
 
 function App() {
   const [currentPage, setCurrentPage] = useState('inventoryActions');
@@ -27,6 +28,14 @@ function App() {
       case 'alertsAndOverstock':
         return (
           <AlertsAndOverstockPage
+            setMessage={setMessage}
+            setError={setError}
+            clearMessages={clearMessages}
+          />
+        );
+      case 'demandForecast': // NEW Case for Demand Forecast Page
+        return (
+          <DemandForecastPage
             setMessage={setMessage}
             setError={setError}
             clearMessages={clearMessages}
@@ -59,6 +68,12 @@ function App() {
           className={currentPage === 'alertsAndOverstock' ? 'active' : ''}
         >
           Insights & Alerts
+        </button>
+        <button
+          onClick={() => setCurrentPage('demandForecast')} // NEW Button
+          className={currentPage === 'demandForecast' ? 'active' : ''}
+        >
+          Demand Forecast
         </button>
       </nav>
 

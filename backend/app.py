@@ -4,6 +4,8 @@ from flask_cors import CORS
 import io # For CSV file handling
 import pandas as pd # Needed for batch CSV processing in routes
 import datetime # Needed for timestamp handling if CSV parsing happens here
+import joblib # For saving/loading models
+import os # For pathing to ML models
 
 # Import MongoDB client functions
 from db_client import get_db, connect_to_mongodb
@@ -17,11 +19,46 @@ from services.inventory_service import (
     process_sales_batch_csv,
     process_receipts_batch_csv,
     get_low_stock_alerts_data,
-    get_overstocked_products_data # NEW: Import overstocked data function
+    get_overstocked_products_data,
+    get_demand_forecast_data_ml, # Re-import the updated ML-driven forecast function
+    get_reorder_recommendation # NEW: Import reorder recommendation function
 )
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
+
+# --- Load ML Model and Preprocessor at App Startup ---
+MODELS_DIR = 'ml_models'
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+best_model_filename = None
+for f in os.listdir(os.path.join(CURRENT_DIR, MODELS_DIR)):
+    if f.startswith('best_demand_forecast_model_') and f.endswith('.joblib'):
+        best_model_filename = f
+        break
+
+GLOBAL_ML_MODEL = None
+GLOBAL_PREPROCESSOR = None
+GLOBAL_NUMERICAL_FEATURES = []
+GLOBAL_CATEGORICAL_FEATURES = []
+
+if best_model_filename:
+    MODEL_PATH = os.path.join(CURRENT_DIR, MODELS_DIR, best_model_filename)
+    PREPROCESSOR_PATH = os.path.join(CURRENT_DIR, MODELS_DIR, 'feature_preprocessor.joblib')
+    NUM_FEATURES_PATH = os.path.join(CURRENT_DIR, MODELS_DIR, 'numerical_features.joblib')
+    CAT_FEATURES_PATH = os.path.join(CURRENT_DIR, MODELS_DIR, 'categorical_features.joblib')
+
+    try:
+        GLOBAL_ML_MODEL = joblib.load(MODEL_PATH)
+        GLOBAL_PREPROCESSOR = joblib.load(PREPROCESSOR_PATH)
+        GLOBAL_NUMERICAL_FEATURES = joblib.load(NUM_FEATURES_PATH)
+        GLOBAL_CATEGORICAL_FEATURES = joblib.load(CAT_FEATURES_PATH)
+        print(f"ML Model ({best_model_filename}), Preprocessor, and Feature lists loaded successfully.")
+    except Exception as e:
+        print(f"Error loading ML model components: {e}. Forecasting and Reorder APIs might not function.")
+else:
+    print("No best model file found in ml_models directory. Forecasting and Reorder APIs will not function.")
+
 
 # --- API Endpoints ---
 
@@ -30,7 +67,7 @@ def home():
     """
     A simple home route to confirm the backend is running.
     """
-    return "Walmart Inventory Management Backend is running! Access /inventory, /inventory/sale, /inventory/receipt, /inventory/low_stock_alerts, /inventory/overstocked_alerts."
+    return "Walmart Inventory Management Backend is running! Access /inventory, /inventory/sale, /inventory/receipt, /inventory/low_stock_alerts, /inventory/overstocked_alerts, /inventory/forecast, /inventory/reorder_recommendation."
 
 @app.route('/inventory/<string:store_id>/<string:product_id>', methods=['GET'])
 def get_inventory(store_id, product_id):
@@ -203,7 +240,7 @@ def get_low_stock_alerts():
         print(f"Error fetching low stock alerts based on days: {e}")
         return jsonify({"error": f"An error occurred while fetching alerts: {str(e)}"}), 500
 
-@app.route('/inventory/overstocked_alerts', methods=['GET']) # NEW ENDPOINT
+@app.route('/inventory/overstocked_alerts', methods=['GET'])
 def get_overstocked_alerts():
     """
     Identifies and returns products across all stores that are considered overstocked.
@@ -233,21 +270,129 @@ def get_overstocked_alerts():
         print(f"Error fetching overstocked alerts: {e}")
         return jsonify({"error": f"An error occurred while fetching overstocked alerts: {str(e)}"}), 500
 
+@app.route('/inventory/forecast', methods=['GET'])
+def get_demand_forecast():
+    """
+    Retrieves demand forecast for a specific product at a given store for future days.
+    
+    Query Parameters:
+    - `store_id`: Required.
+    - `product_id`: Required.
+    - `num_days`: Integer, number of days to forecast (default: 30).
+    - Optional 'what-if' parameters: `future_discount`, `future_holiday`, `future_weather`, `future_price`, `future_competitor_pricing`.
+    """
+    store_id = request.args.get('store_id')
+    product_id = request.args.get('product_id')
+    num_days_str = request.args.get('num_days', '30')
+
+    # Collect optional 'what-if' parameters
+    what_if_params = {
+        'future_discount': request.args.get('future_discount'),
+        'future_holiday': request.args.get('future_holiday'),
+        'future_weather': request.args.get('future_weather'),
+        'future_price': request.args.get('future_price'),
+        'future_competitor_pricing': request.args.get('future_competitor_pricing')
+    }
+    # Convert numerical what-if params to float if they exist
+    if what_if_params['future_discount'] is not None:
+        try:
+            what_if_params['future_discount'] = float(what_if_params['future_discount'])
+        except ValueError:
+            return jsonify({"error": "Invalid 'future_discount' value."}), 400
+    if what_if_params['future_price'] is not None:
+        try:
+            what_if_params['future_price'] = float(what_if_params['future_price'])
+        except ValueError:
+            return jsonify({"error": "Invalid 'future_price' value."}), 400
+    if what_if_params['future_competitor_pricing'] is not None:
+        try:
+            what_if_params['future_competitor_pricing'] = float(what_if_params['future_competitor_pricing'])
+        except ValueError:
+            return jsonify({"error": "Invalid 'future_competitor_pricing' value."}), 400
+    
+    # Filter out None values from what_if_params to pass only provided overrides
+    what_if_params_filtered = {k: v for k, v in what_if_params.items() if v is not None}
+
+
+    if not store_id or not product_id:
+        return jsonify({"error": "Missing 'store_id' or 'product_id' for forecast."}), 400
+
+    try:
+        num_days = int(num_days_str)
+        if num_days <= 0:
+            return jsonify({"error": "num_days must be a positive integer."}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid 'num_days' value. Must be an integer."}), 400
+
+    if GLOBAL_ML_MODEL is None or GLOBAL_PREPROCESSOR is None:
+        return jsonify({"error": "ML model or preprocessor not loaded. Cannot generate forecast."}), 500
+
+    try:
+        db = get_db()
+        forecast_data = get_demand_forecast_data_ml(
+            db, 
+            GLOBAL_ML_MODEL, 
+            GLOBAL_PREPROCESSOR, 
+            GLOBAL_NUMERICAL_FEATURES, 
+            GLOBAL_CATEGORICAL_FEATURES, 
+            store_id, 
+            product_id, 
+            num_days,
+            **what_if_params_filtered # Pass filtered what-if parameters
+        )
+        return jsonify(forecast_data), 200
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        print(f"Error generating demand forecast: {e}")
+        return jsonify({"error": f"An unexpected error occurred during forecasting: {str(e)}"}), 500
+
+
+@app.route('/inventory/reorder_recommendation', methods=['GET']) # NEW ENDPOINT
+def get_reorder_recommendations_api():
+    """
+    Provides reorder recommendations (suggested quantity, order date, delivery date)
+    for a specific product at a given store.
+    
+    Query Parameters:
+    - `store_id`: Required.
+    - `product_id`: Required.
+    """
+    store_id = request.args.get('store_id')
+    product_id = request.args.get('product_id')
+
+    if not store_id or not product_id:
+        return jsonify({"error": "Missing 'store_id' or 'product_id' for reorder recommendation."}), 400
+    
+    if GLOBAL_ML_MODEL is None or GLOBAL_PREPROCESSOR is None:
+        return jsonify({"error": "ML model or preprocessor not loaded. Cannot generate reorder recommendation."}), 500
+
+    try:
+        db = get_db()
+        recommendation = get_reorder_recommendation(
+            db,
+            GLOBAL_ML_MODEL,
+            GLOBAL_PREPROCESSOR,
+            GLOBAL_NUMERICAL_FEATURES,
+            GLOBAL_CATEGORICAL_FEATURES,
+            store_id,
+            product_id
+        )
+        return jsonify(recommendation), 200
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        print(f"Error generating reorder recommendation: {e}")
+        return jsonify({"error": f"An unexpected error occurred during reorder recommendation: {str(e)}"}), 500
+
 
 # --- Running the Flask Application ---
 if __name__ == '__main__':
-    # Ensure MongoDB connection is established before starting the Flask app
-    # This will attempt to connect, and if it fails, the app won't start.
     try:
         connect_to_mongodb()
     except Exception as e:
         print(f"Application startup aborted due to MongoDB connection error: {e}")
-        exit(1) # Exit if cannot connect to DB
-
-    # IMPORTANT: load_initial_inventory_data() from services should ONLY be uncommented ONCE
-    # for initial data loading (if you re-created backend folder entirely).
-    # After successful load, keep it commented out.
-    # load_initial_inventory_data(get_db()) # <-- THIS LINE MUST REMAIN COMMENTED OUT
+        exit(1)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
 

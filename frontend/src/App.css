@@ -45,8 +45,9 @@
     .main-nav {
       display: flex;
       justify-content: center;
+      flex-wrap: wrap; /* Allow buttons to wrap to next line if needed */
       margin-bottom: 30px;
-      gap: 15px;
+      gap: 15px; /* Spacing between buttons */
       padding-bottom: 15px;
       border-bottom: 1px solid #e0e0e0;
     }

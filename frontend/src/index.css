@@ -1,13 +1,182 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* frontend/src/index.css - Add this at the end */
+
+/* Scrollable container for forecast details */
+.scrollable-list-container {
+    max-height: 300px; /* Adjust this height as needed */
+    overflow-y: auto; /* Adds a vertical scrollbar when content overflows */
+    border: 1px solid #e0e0e0; /* Optional: Add a subtle border */
+    border-radius: 5px;
+    padding: 10px;
+    background-color: #ffffff; /* Optional: background for the scrollable area */
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Existing styles for the forecast items */
+.forecast-list {
+    list-style: none;
+    padding: 0;
+    margin: 0; /* Remove default margin from ul */
+}
+
+.forecast-item {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.forecast-item:last-child {
+    margin-bottom: 0; /* No margin for the last item */
+}
+
+/* Ensure chart container is responsive within its parent */
+.chart-container-recharts {
+  width: 100%;
+  overflow-x: auto; /* Allows horizontal scrolling if chart is very wide */
+}
+
+/* Adjust card margins for better spacing between sections */
+.card {
+    margin-bottom: 20px; /* Add some space below each card */
+    padding: 20px; /* Ensure consistent padding */
+}
+
+/* Improve input group layout for labels and inputs */
+.input-group label {
+    display: flex; /* Make label and input align horizontally */
+    flex-direction: column; /* Stack label above input */
+    margin-bottom: 15px; /* Space between label-input pairs */
+}
+
+.input-group label input,
+.input-group label select {
+    margin-top: 5px; /* Space between label text and input field */
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+    width: 100%; /* Make inputs take full width of their container */
+    box-sizing: border-box; /* Include padding/border in element's total width */
+}
+
+/* Buttons styling */
+.input-group button {
+    padding: 10px 20px;
+    margin-right: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+.input-group button:hover {
+    background-color: #0056b3;
+}
+
+.input-group button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* Small hint text style */
+.hint {
+    font-size: 0.9em;
+    color: #666;
+    margin-top: -10px; /* Pull it closer to the heading/inputs */
+    margin-bottom: 15px;
+    font-style: italic;
+}
+
+/* General page content styling */
+.page-content {
+    max-width: 1200px; /* Limit content width */
+    margin: 20px auto; /* Center content with margin */
+    padding: 0 20px; /* Add horizontal padding */
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 30px;
+    font-size: 2.2em;
+}
+
+h2 {
+    color: #007bff;
+    margin-top: 0; /* Remove default top margin for consistency */
+    margin-bottom: 15px;
+    font-size: 1.8em;
+    border-bottom: 2px solid #eee; /* Light separator */
+    padding-bottom: 10px;
+}
+
+h3 {
+    color: #555;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    font-size: 1.5em;
+}
+
+.forecast-list, .alert-list {
+    list-style: none;
+    padding: 0;
+}
+
+
+.forecast-item p, .alert-item p {
+    margin: 0;
+    line-height: 1.4;
+}
+
+.no-forecast-message, .no-reorder-message {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+    border: 1px dashed #ccc;
+    border-radius: 5px;
+    margin-top: 20px;
+    background-color: #f5f5f5;
+}
+
+.custom-tooltip {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 0.9em;
+}
+
+/* General improvements for existing elements */
+.inventory-display p {
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.highlight-text {
+  color: #007bff; /* A blue color */
+  font-weight: bold;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .input-group {
+        flex-direction: column; /* Stack inputs vertically on small screens */
+        align-items: stretch;
+    }
+
+    .input-group label {
+        width: 100%; /* Full width for labels on small screens */
+    }
+
+    .input-group button {
+        width: 100%; /* Full width for buttons */
+        margin-right: 0;
+        margin-bottom: 10px; /* Space between stacked buttons */
+    }
 }

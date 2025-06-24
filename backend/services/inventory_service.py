@@ -490,3 +490,249 @@ def get_overstocked_products_data(db, threshold_multiplier, days_for_demand, sto
     overstocked_items.sort(key=lambda x: x.get('overstock_ratio', 0) if isinstance(x.get('overstock_ratio'), (int, float)) else 0, reverse=True)
 
     return overstocked_items
+
+def get_demand_forecast_data_ml(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id, num_days=30, **kwargs):
+    """
+    Generates a demand forecast for a specific product at a given store for future days
+    using the loaded machine learning model and preprocessor. Allows for 'what-if' scenario inputs.
+
+    Args:
+        db: MongoDB database instance.
+        ml_model: The pre-trained machine learning model.
+        preprocessor: The pre-trained ColumnTransformer for feature preprocessing.
+        numerical_features: List of numerical feature names used during training.
+        categorical_features: List of categorical feature names used during training.
+        store_id (str): The ID of the store for which to forecast.
+        product_id (str): The ID of the product for which to forecast.
+        num_days (int): Number of future days to forecast.
+        **kwargs: Optional 'what-if' parameters (e.g., 'future_discount', 'future_holiday').
+    """
+    if ml_model is None or preprocessor is None:
+        raise ValueError("ML model or preprocessor not loaded in the backend.")
+
+    inventory_record = db.inventory.find_one(
+        {'store_id': store_id, 'product_id': product_id},
+        sort=[('last_updated', pymongo.DESCENDING)]
+    )
+    if not inventory_record:
+        raise ValueError(f"Inventory record not found for Product ID: {product_id} at Store ID: {store_id}.")
+    
+    product_details = db.products.find_one({'product_id': product_id})
+    if not product_details:
+        raise ValueError(f"Product details not found for Product ID: {product_id}.")
+
+    store_details = db.stores.find_one({'store_id': store_id})
+    if not store_details:
+        raise ValueError(f"Store details not found for Store ID: {store_id}.")
+
+    last_units_sold = inventory_record.get('last_sold_quantity', 0)
+    last_inventory_level = inventory_record.get('current_stock', 0)
+    
+    avg_price = 10.0
+    avg_discount = 0.0
+
+    try:
+        product_pricing = db.products.find_one(
+            {"product_id": product_id},
+            {"price": 1, "discount": 1, "_id": 0}
+        )
+        if product_pricing:
+            if product_pricing.get('price') is not None:
+                avg_price = float(product_pricing['price'])
+            if product_pricing.get('discount') is not None:
+                avg_discount = float(product_pricing['discount'])
+        else: 
+            try:
+                avg_price_doc = db.products.aggregate([{"$group": {"_id": None, "avg_price": {"$avg": "$price"}}}]).next()
+                if avg_price_doc and avg_price_doc.get('avg_price') is not None:
+                    avg_price = float(avg_price_doc['avg_price'])
+            except StopIteration:
+                pass
+            
+            try:
+                avg_discount_doc = db.products.aggregate([{"$group": {"_id": None, "avg_discount": {"$avg": "$discount"}}}]).next()
+                if avg_discount_doc and avg_discount_doc.get('avg_discount') is not None:
+                    avg_discount = float(avg_discount_doc['avg_discount'])
+            except StopIteration:
+                pass
+    except Exception as e:
+        print(f"Warning: Could not robustly calculate price/discount for product {product_id}: {e}. Using defaults.")
+
+    units_ordered_future = 0 
+    competitor_pricing_default = avg_price * 0.95 
+    
+    forecast_data = []
+    current_date = datetime.date.today()
+
+    # Use kwargs for 'what-if' values, or fall back to defaults
+    future_discount_override = kwargs.get('future_discount', avg_discount)
+    future_holiday_override = kwargs.get('future_holiday', "No")
+    future_weather_override = kwargs.get('future_weather', "Clear") # Default to clear
+    future_price_override = kwargs.get('future_price', avg_price)
+    future_competitor_pricing_override = kwargs.get('future_competitor_pricing', competitor_pricing_default)
+
+
+    for i in range(num_days):
+        forecast_date = current_date + datetime.timedelta(days=i)
+        
+        # Apply overrides from what-if scenarios, otherwise use defaults
+        weather_condition = future_weather_override
+        holiday_promotion = future_holiday_override
+        price_for_forecast = future_price_override
+        discount_for_forecast = future_discount_override
+        competitor_pricing_for_forecast = future_competitor_pricing_override
+
+        month = forecast_date.month
+        seasonality = "Spring" if 3 <= month <= 5 else \
+                      "Summer" if 6 <= month <= 8 else \
+                      "Autumn" if 9 <= month <= 11 else \
+                      "Winter" 
+        
+        future_data_row_dict = {
+            'Date': forecast_date, 
+            'Store ID': store_id,
+            'Product ID': product_id,
+            'Category': product_details.get('category', 'Unknown'),
+            'Region': store_details.get('region', 'Unknown'),
+            'Inventory Level': last_inventory_level,
+            'Units Ordered': units_ordered_future,
+            'Price': price_for_forecast,
+            'Discount': discount_for_forecast,
+            'Weather Condition': weather_condition,
+            'Holiday/Promotion': holiday_promotion,
+            'Competitor Pricing': competitor_pricing_for_forecast,
+            'Seasonality': seasonality,
+            'Units Sold Lag1': last_units_sold, 
+            'Inventory Level Lag1': last_inventory_level 
+        }
+
+        future_data_df = pd.DataFrame([future_data_row_dict])
+        future_data_df['Date'] = pd.to_datetime(future_data_df['Date'])
+        
+        future_data_df['Year'] = future_data_df['Date'].dt.year
+        future_data_df['Month'] = future_data_df['Date'].dt.month
+        future_data_df['Day'] = future_data_df['Date'].dt.day
+        future_data_df['DayOfWeek'] = future_data_df['Date'].dt.dayofweek
+        future_data_df['WeekOfYear'] = future_data_df['Date'].dt.isocalendar().week.astype(int)
+
+        all_expected_features_for_df = numerical_features + categorical_features
+
+        X_forecast_input = pd.DataFrame(columns=all_expected_features_for_df)
+        for col in all_expected_features_for_df:
+            if col in future_data_df.columns:
+                X_forecast_input[col] = future_data_df[col]
+            else:
+                if col in numerical_features:
+                    X_forecast_input[col] = 0.0 
+                elif col in categorical_features:
+                    X_forecast_input[col] = 'Unknown'
+                else:
+                    X_forecast_input[col] = 'NaN' 
+
+        X_forecast_processed = preprocessor.transform(X_forecast_input)
+
+        predicted_demand = ml_model.predict(X_forecast_processed)[0]
+        predicted_demand = max(0, round(predicted_demand)) 
+
+        forecast_data.append({
+            "date": forecast_date.isoformat(),
+            "predicted_demand": predicted_demand,
+            "store_id": store_id,
+            "product_id": product_id
+        })
+        
+        last_units_sold = predicted_demand 
+
+    return forecast_data
+
+
+def get_reorder_recommendation(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id):
+    """
+    Calculates reorder recommendations (quantity, order date, delivery date)
+    based on current stock, product lead time, and forecasted demand.
+    """
+    inventory_record = db.inventory.find_one(
+        {'store_id': store_id, 'product_id': product_id}
+    )
+    if not inventory_record:
+        raise ValueError(f"Inventory record not found for Product ID: {product_id} at Store ID: {store_id}.")
+    
+    product_details = db.products.find_one({'product_id': product_id})
+    if not product_details:
+        raise ValueError(f"Product details not found for Product ID: {product_id}.")
+
+    current_stock = inventory_record.get('current_stock', 0)
+    # Default replenishment time to 7 days if not found in product details
+    min_replenish_time = product_details.get('min_replenish_time', 7) 
+    
+    # Define safety stock days (e.g., 7 days of forecasted demand)
+    SAFETY_STOCK_DAYS = 7 
+    # Define target inventory days (e.g., maintain 30 days of stock after replenishment)
+    TARGET_INVENTORY_DAYS = 30
+
+    # 1. Get demand forecast for lead time + safety stock days
+    # We need forecast for `min_replenish_time + SAFETY_STOCK_DAYS` days to calculate total demand until reorder point
+    # We'll use the ML-driven forecast.
+    total_forecast_days_needed = min_replenish_time + SAFETY_STOCK_DAYS
+    
+    # Ensure num_days is at least 1 for forecast function
+    if total_forecast_days_needed <= 0:
+        total_forecast_days_needed = 1 
+
+    forecast_for_lead_time_and_safety = get_demand_forecast_data_ml(
+        db, ml_model, preprocessor, numerical_features, categorical_features, 
+        store_id, product_id, num_days=total_forecast_days_needed
+    )
+    
+    # Calculate total forecasted demand over the period
+    total_forecasted_demand = sum([f['predicted_demand'] for f in forecast_for_lead_time_and_safety])
+
+    # Calculate average daily forecasted demand over the period for safety stock calculation
+    average_daily_forecasted_demand = total_forecasted_demand / total_forecast_days_needed if total_forecast_days_needed > 0 else inventory_record.get('daily_sales_simulation_base', 1)
+
+    # Calculate Safety Stock (e.g., 7 days of average forecasted demand)
+    safety_stock_units = round(average_daily_forecasted_demand * SAFETY_STOCK_DAYS)
+
+    # Calculate Reorder Point: Demand during lead time + Safety Stock
+    # For demand during lead time, use forecast specifically for lead time days
+    demand_during_lead_time = sum([f['predicted_demand'] for f in forecast_for_lead_time_and_safety[:min_replenish_time]])
+    reorder_point = max(0, round(demand_during_lead_time + safety_stock_units)) # Ensure non-negative
+
+    # Suggested Order Quantity: Quantity to bring stock up to TARGET_INVENTORY_DAYS + Safety Stock
+    # Calculate total demand for target inventory days
+    forecast_for_target_inventory = get_demand_forecast_data_ml(
+        db, ml_model, preprocessor, numerical_features, categorical_features, 
+        store_id, product_id, num_days=TARGET_INVENTORY_DAYS
+    )
+    total_forecasted_demand_target = sum([f['predicted_demand'] for f in forecast_for_target_inventory])
+
+    target_inventory_level = total_forecasted_demand_target + safety_stock_units
+    
+    suggested_order_quantity = max(0, round(target_inventory_level - current_stock))
+    
+    # If current stock is already very high (above reorder point and target), suggest 0 or very small
+    if current_stock > reorder_point and suggested_order_quantity <= 0:
+        suggested_order_quantity = 0
+
+    # Calculate Order Date and Delivery Date
+    order_date = datetime.date.today()
+    delivery_date = order_date + datetime.timedelta(days=min_replenish_time)
+
+    # Determine if a reorder is currently needed
+    reorder_needed = "Yes" if current_stock <= reorder_point and suggested_order_quantity > 0 else "No"
+    
+    return {
+        "store_id": store_id,
+        "product_id": product_id,
+        "current_stock": current_stock,
+        "min_replenish_time_days": min_replenish_time,
+        "average_daily_forecasted_demand": round(average_daily_forecasted_demand, 2),
+        "safety_stock_units": safety_stock_units,
+        "reorder_point_units": reorder_point,
+        "reorder_needed": reorder_needed,
+        "suggested_order_quantity": suggested_order_quantity,
+        "suggested_order_date": order_date.isoformat(),
+        "suggested_delivery_date": delivery_date.isoformat(),
+        "notes": "Recommendation based on ML demand forecast, lead time, and safety stock. Adjust parameters as needed."
+    }
+

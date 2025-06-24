@@ -75,7 +75,6 @@ export const getLowStockAlerts = async (daysLeftThreshold, storeId = '') => {
   }
 };
 
-// NEW: API call for overstocked alerts
 export const getOverstockedAlerts = async (thresholdMultiplier, daysForDemand, storeId = '') => {
   try {
     const url = new URL(`${API_BASE_URL}/overstocked_alerts`);
@@ -92,6 +91,51 @@ export const getOverstockedAlerts = async (thresholdMultiplier, daysForDemand, s
     return await response.json();
   } catch (error) {
     console.error("Error fetching overstocked alerts:", error);
+    throw error;
+  }
+};
+
+export const getDemandForecast = async (storeId, productId, numDays = 30, whatIfParams = {}) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/forecast`);
+    url.searchParams.append('store_id', storeId);
+    url.searchParams.append('product_id', productId);
+    url.searchParams.append('num_days', numDays);
+    
+    // Add what-if parameters to URL search params
+    for (const key in whatIfParams) {
+        if (whatIfParams[key] !== undefined && whatIfParams[key] !== null) {
+            url.searchParams.append(key, whatIfParams[key]);
+        }
+    }
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching demand forecast:", error);
+    throw error;
+  }
+};
+
+// NEW: API call for Reorder Recommendation
+export const getReorderRecommendation = async (storeId, productId) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/reorder_recommendation`);
+    url.searchParams.append('store_id', storeId);
+    url.searchParams.append('product_id', productId);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching reorder recommendation:", error);
     throw error;
   }
 };
@@ -139,23 +183,19 @@ export const uploadReceiptsCSV = async (file) => {
   }
 };
 
-// NEW: Generic CSV download helper
 export const downloadCSV = (data, filename) => {
   if (!data || data.length === 0) {
-    alert("No data to export."); // Changed from window.alert to standard alert for consistency
+    alert("No data to export.");
     return;
   }
 
-  // Get headers from the first object
   const headers = Object.keys(data[0]);
   const csvRows = [];
-  csvRows.push(headers.join(',')); // Add header row
+  csvRows.push(headers.join(','));
 
-  // Add data rows
   for (const row of data) {
     const values = headers.map(header => {
       const value = row[header];
-      // Handle commas or newlines in data by enclosing in quotes
       return `"${String(value).replace(/"/g, '""')}"`;
     });
     csvRows.push(values.join(','));

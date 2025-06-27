@@ -180,6 +180,26 @@ export const getRemediationActions = async (storeId = '', productId = '') => {
   }
 };
 
+export const getTransferFeasibility = async (sourceStoreId, targetStoreId, productId, transferQuantity) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/transfer_feasibility`);
+    url.searchParams.append('source_store_id', sourceStoreId);
+    url.searchParams.append('target_store_id', targetStoreId);
+    url.searchParams.append('product_id', productId);
+    url.searchParams.append('transfer_quantity', transferQuantity);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching transfer feasibility data:", error);
+    throw error;
+  }
+};
+
 export const uploadSalesCSV = async (file) => {
   try {
     const formData = new FormData();

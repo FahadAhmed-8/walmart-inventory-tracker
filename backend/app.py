@@ -24,7 +24,8 @@ from services.inventory_service import (
     get_demand_forecast_data_ml, # Re-import the updated ML-driven forecast function
     get_reorder_recommendation, # NEW: Import reorder recommendation function
     get_optimal_stocking_data,
-    get_remediation_actions # NEW: Import the new function
+    get_remediation_actions,
+    get_transfer_feasibility_score # NEW: Import the new function
 )
 
 app = Flask(__name__)
@@ -455,6 +456,49 @@ def get_remediation_actions_api():
     except Exception as e:
         print(f"Error generating remediation actions: {e}")
         return jsonify({"error": f"An unexpected error occurred during remediation action calculation: {str(e)}"}), 500
+
+@app.route('/inventory/transfer_feasibility', methods=['GET']) # NEW ENDPOINT
+def get_transfer_feasibility_api():
+    """
+    Calculates and returns a feasibility score for a potential product transfer
+    between two specified stores.
+
+    Query Parameters:
+    - `source_store_id`: Required.
+    - `target_store_id`: Required.
+    - `product_id`: Required.
+    - `transfer_quantity`: Required (integer).
+    """
+    source_store_id = request.args.get('source_store_id')
+    target_store_id = request.args.get('target_store_id')
+    product_id = request.args.get('product_id')
+    transfer_quantity_str = request.args.get('transfer_quantity')
+
+    if not all([source_store_id, target_store_id, product_id, transfer_quantity_str]):
+        return jsonify({"error": "Missing source_store_id, target_store_id, product_id, or transfer_quantity."}), 400
+
+    try:
+        transfer_quantity = int(transfer_quantity_str)
+        if transfer_quantity <= 0:
+            return jsonify({"error": "Transfer quantity must be a positive integer."}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid 'transfer_quantity' value. Must be an integer."}), 400
+
+    try:
+        db = get_db()
+        feasibility_score_data = get_transfer_feasibility_score(
+            db,
+            source_store_id,
+            target_store_id,
+            product_id,
+            transfer_quantity
+        )
+        return jsonify(feasibility_score_data), 200
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        print(f"Error calculating transfer feasibility: {e}")
+        return jsonify({"error": f"An unexpected error occurred during transfer feasibility calculation: {str(e)}"}), 500
 
 # --- Running the Flask Application ---
 if __name__ == '__main__':

@@ -7,11 +7,13 @@ import pandas as pd
 import pymongo # Needed for pymongo.UpdateOne
 from pymongo.errors import BulkWriteError, ConnectionFailure
 from pymongo import ReturnDocument
+import math 
 
 # Paths to your pre-generated NDJSON files (relative to backend/ directory, where data_prep.py placed them)
 PRODUCTS_JSON_PATH = 'products.json'
 STORES_JSON_PATH = 'stores.json'
 INVENTORY_JSON_PATH = 'inventory.json'
+
 
 def load_initial_inventory_data(db):
     """
@@ -142,6 +144,44 @@ def load_initial_inventory_data(db):
         print(f"Finished loading {collection_name}. Total {total_items_processed} items processed.")
 
     print("\n--- Initial data load process complete ---")
+
+def get_global_config(db):
+    """
+    Retrieves the global configuration settings from the database.
+    """
+    config = db.global_config.find_one({'config_id': 'default_config'})
+    if not config:
+        # Provide sensible defaults if config is not found (or raise error if strictly required)
+        print("Warning: Global config not found. Using default values for transfers.")
+        return {
+            'config_id': 'default_config',
+            'shipping_cost_per_km': 1.0, # Default shipping cost
+            'transfer_success_rate': 0.9, # Default success rate
+            'current_lead_time_override': 0
+        }
+    return config
+
+def calculate_haversine_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculates the Haversine distance between two points on Earth
+    given their latitudes and longitudes in degrees.
+    Returns distance in kilometers.
+    """
+    R = 6371  # Earth radius in kilometers
+
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+
+    a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    distance = R * c
+    return distance
 
 def get_inventory_item(db, store_id, product_id):
     """
@@ -738,7 +778,8 @@ def get_reorder_recommendation(db, ml_model, preprocessor, numerical_features, c
 def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id):
     """
     Calculates the optimal stocking level (target inventory) for a given product at a store,
-    incorporating forecasted demand, base safety stock, and supplier reliability.
+    incorporating forecasted demand, base safety stock, supplier reliability,
+    and dynamic lead time adjustments.
     
     Args:
         db: MongoDB database instance.
@@ -767,34 +808,34 @@ def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, ca
     if not product_details:
         raise ValueError(f"Product details not found for Product ID: {product_id}.")
 
+    # NEW: Fetch global config for lead time override
+    global_config = get_global_config(db) # Use the helper function
+    current_lead_time_override = global_config.get('current_lead_time_override', 0) # Default to 0
+
     current_stock = inventory_record.get('current_stock', 0)
     base_safety_stock = product_details.get('base_safety_stock', 10) # Default to 10 if missing
     supplier_category_reliability = product_details.get('supplier_category_reliability', 0.8) # Default to 0.8 if missing
+    original_min_replenish_time = product_details.get('min_replenish_time', 7) # Default to 7 if missing
 
     # --- Calculations for Optimal Stocking ---
     
-    # 1. Calculate reliability factor
-    # reliability_factor = 1.5 * (1 - product["supplier_category_reliability"])
+    # 1. Dynamic Lead Time Adjustments (Feature 5)
+    effective_lead_time = original_min_replenish_time + current_lead_time_override
+    effective_lead_time = max(1, effective_lead_time) # Ensure lead time is at least 1 day
+
+    # 2. Calculate reliability factor
     reliability_factor = 1.5 * (1 - supplier_category_reliability)
     
-    # 2. Calculate adjusted safety stock
-    # safety_stock = product["base_safety_stock"] * (1 + reliability_factor)
-    calculated_safety_stock = round(base_safety_stock * (1 + reliability_factor))
+    # 3. Calculate adjusted safety stock
+    # Integrate with Safety Stock (Feature 5): Adjust safety stock by lead time ratio
+    lead_time_ratio = effective_lead_time / original_min_replenish_time if original_min_replenish_time > 0 else 1
+    
+    # Base safety stock is adjusted by reliability factor, then by lead time ratio
+    calculated_safety_stock = round(base_safety_stock * (1 + reliability_factor) * lead_time_ratio)
+    calculated_safety_stock = max(0, calculated_safety_stock) # Ensure non-negative
 
-    # 3. Get 30-day demand forecast
-    # We use the existing get_demand_forecast_data_ml function
-    # Note: For optimal stocking, we want to know demand for a future period (e.g., 30 days)
-    # to maintain sufficient stock, not just lead time.
+    # 4. Get 30-day demand forecast
     forecast_days_for_optimal_stock = 30 # As per requirement
-    
-    # Pass current stock and last sold quantity as the most recent known values for the forecast model.
-    # The forecast function itself handles rolling predictions using these.
-    # However, since this calculation is about target *level* based on future demand,
-    # we just need the sum of the forecast over 30 days.
-    
-    # We might need to ensure get_demand_forecast_data_ml uses the *current* stock for its first day's prediction
-    # or ensure it's not affected by `last_units_sold` being derived from `predicted_demand` for the *next* day.
-    # For now, let's assume `get_demand_forecast_data_ml` gives a reasonable prediction for each day.
     
     forecast_data_30_days = get_demand_forecast_data_ml(
         db, ml_model, preprocessor, numerical_features, categorical_features, 
@@ -803,11 +844,8 @@ def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, ca
     
     total_30_day_forecasted_demand = sum([f['predicted_demand'] for f in forecast_data_30_days])
 
-    # 4. Calculate target inventory level
-    # target_inventory_level = (30-day demand forecast sum) + calculated_safety_stock
+    # 5. Calculate target inventory level
     target_inventory_level = total_30_day_forecasted_demand + calculated_safety_stock
-    
-    # Ensure target is not negative
     target_inventory_level = max(0, target_inventory_level)
 
     return {
@@ -820,13 +858,18 @@ def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, ca
         "calculated_safety_stock": calculated_safety_stock,
         "total_30_day_forecasted_demand": total_30_day_forecasted_demand,
         "target_inventory_level": target_inventory_level,
-        "optimal_stocking_notes": "Target inventory based on 30-day forecast and adjusted safety stock considering supplier reliability."
+        "min_replenish_time": original_min_replenish_time, # NEW: Original lead time
+        "current_lead_time_override": current_lead_time_override, # NEW: Current override
+        "effective_lead_time": effective_lead_time, # NEW: Calculated effective lead time
+        "optimal_stocking_notes": "Target inventory based on 30-day forecast, adjusted safety stock (considering supplier reliability and dynamic lead time)." # Updated note
     }
+
 
 def get_remediation_actions(db, ml_model, preprocessor, numerical_features, categorical_features, store_id_filter=None, product_id_filter=None):
     """
-    Generates a prioritized list of remediation actions (order or promote)
-    for understocked or overstocked products based on optimal stocking levels.
+    Generates a prioritized list of remediation actions (order, promote, or transfer)
+    for understocked or overstocked products based on optimal stocking levels and transfer feasibility,
+    including estimated financial impact.
 
     Args:
         db: MongoDB database instance.
@@ -838,87 +881,321 @@ def get_remediation_actions(db, ml_model, preprocessor, numerical_features, cate
         product_id_filter (str, optional): Filter actions for a specific product.
 
     Returns:
-        list: A list of dictionaries, each representing a recommended action.
+        list: A list of dictionaries, each representing a recommended action with financial impact.
     """
     remediation_actions = []
     
-    query = {}
-    if store_id_filter:
-        query['store_id'] = store_id_filter
-    if product_id_filter:
-        query['product_id'] = product_id_filter
+    TRANSFER_VIABILITY_THRESHOLD = 70 
+    PROMOTION_DISCOUNT_PERCENTAGE = 0.15 # 15% discount for promotion actions
 
-    # Iterate through all relevant inventory items
-    for inventory_item in db.inventory.find(query):
-        store_id = inventory_item['store_id']
-        product_id = inventory_item['product_id']
-        current_stock = inventory_item.get('current_stock', 0)
+    # Fetch all inventory items (potentially filtered)
+    inventory_query = {}
+    if store_id_filter:
+        inventory_query['store_id'] = store_id_filter
+    if product_id_filter:
+        inventory_query['product_id'] = product_id_filter
+
+    all_inventory_items_in_scope = list(db.inventory.find(inventory_query))
+
+    # --- Step 1: Identify Understocked and Overstocked Items ---
+    understocked_items = []
+    overstocked_items = []
+
+    for item in all_inventory_items_in_scope:
+        store_id = item['store_id']
+        product_id = item['product_id']
+        current_stock = item.get('current_stock', 0)
 
         try:
-            # Get optimal stocking data for this product-store pair
             optimal_stocking_data = get_optimal_stocking_data(
                 db, ml_model, preprocessor, numerical_features, categorical_features,
                 store_id, product_id
             )
             optimal_target_level = optimal_stocking_data['target_inventory_level']
-            
-            # Calculate the Delta: optimal_stock - current_stock
-            # Positive delta = understock (need to order)
-            # Negative delta = overstock (need to promote/reduce)
-            delta = optimal_target_level - current_stock
+            delta = optimal_target_level - current_stock # Positive if under, negative if over
 
-            action_type = None
-            suggested_quantity = 0
-            priority = "low" # Default priority
-            reason = ""
-
-            if delta > 0: # Understock situation
-                action_type = "Order"
-                suggested_quantity = delta
-                reason = f"Current stock ({current_stock}) is below optimal target ({optimal_target_level})."
-                if suggested_quantity > 50: # High priority for significant shortages
-                    priority = "high"
-                elif suggested_quantity > 10: # Medium priority for moderate shortages
-                    priority = "medium"
-                else:
-                    priority = "low" # Small shortages
-
-            elif delta < 0: # Overstock situation
-                action_type = "Promote / Reduce"
-                suggested_quantity = abs(delta) # Quantity to reduce/promote
-                reason = f"Current stock ({current_stock}) is above optimal target ({optimal_target_level})."
-                # For overstock, priority could be based on magnitude or cost of holding
-                if suggested_quantity > 100:
-                    priority = "high"
-                elif suggested_quantity > 30:
-                    priority = "medium"
-                else:
-                    priority = "low"
-            
-            if action_type: # Only add if an action is determined
-                remediation_actions.append({
+            if delta > 0: # Understock
+                understocked_items.append({
                     "store_id": store_id,
                     "product_id": product_id,
                     "current_stock": current_stock,
                     "optimal_target_level": optimal_target_level,
-                    "delta": delta,
-                    "action_type": action_type,
-                    "suggested_quantity": suggested_quantity,
-                    "priority": priority,
-                    "reason": reason,
-                    "timestamp": datetime.datetime.now().isoformat()
+                    "needed_quantity": delta,
+                    "priority": "high" if delta > 50 else ("medium" if delta > 10 else "low"),
+                    "reason": f"Current stock ({current_stock}) is below optimal target ({optimal_target_level}). Needs {delta} units."
                 })
-
+            elif delta < 0: # Overstock
+                overstocked_items.append({
+                    "store_id": store_id,
+                    "product_id": product_id,
+                    "current_stock": current_stock,
+                    "optimal_target_level": optimal_target_level,
+                    "excess_quantity": abs(delta),
+                    "priority": "high" if abs(delta) > 100 else ("medium" if abs(delta) > 30 else "low"),
+                    "reason": f"Current stock ({current_stock}) is above optimal target ({optimal_target_level}). Excess {abs(delta)} units."
+                })
         except ValueError as ve:
-            print(f"Skipping {product_id}@{store_id} due to data error: {ve}")
-            # This handles cases where optimal_stocking_data can't be fetched (e.g., missing product details)
-            continue
+            print(f"Skipping optimal stocking calc for {product_id}@{store_id} due to data error: {ve}")
         except Exception as e:
-            print(f"An unexpected error occurred for {product_id}@{store_id}: {e}")
-            continue
+            print(f"Unexpected error in optimal stocking calc for {product_id}@{store_id}: {e}")
+            
+    # --- Step 2: Prioritize Overstock Remediation (Transfer vs. Promote) ---
+    final_remediation_list = [] # Use a new list to build the final actions
+
+    # Add all identified understock actions first (these will be "Order" actions)
+    for u_item in understocked_items:
+        # If user filtered for a specific store/product, only add if it matches.
+        if (not store_id_filter or u_item['store_id'] == store_id_filter) and \
+           (not product_id_filter or u_item['product_id'] == product_id_filter):
+            
+            # Fetch product details for unit_cost (for all actions now, including Order if we want a full P&L)
+            product_details = db.products.find_one({'product_id': u_item['product_id']})
+            unit_cost = product_details.get('unit_cost', 0)
+            product_price = product_details.get('price', 0)
+
+            # For 'Order' action, estimated_net_profit would be positive sales profit * if ordered and sold.
+            # Associated_cost would be the unit_cost * quantity.
+            # This logic needs to be clear: are we simulating "profit from selling these units if they were available"
+            # or "cost of acquiring these units"? Let's assume profit from sales.
+            estimated_net_profit = round((product_price - unit_cost) * u_item['needed_quantity'], 2)
+            associated_cost = round(unit_cost * u_item['needed_quantity'], 2) # Cost to acquire these units if ordered
+
+            final_remediation_list.append({
+                "store_id": u_item['store_id'],
+                "product_id": u_item['product_id'],
+                "current_stock": u_item['current_stock'],
+                "optimal_target_level": u_item['optimal_target_level'],
+                "delta": u_item['needed_quantity'],
+                "action_type": "Order",
+                "suggested_quantity": u_item['needed_quantity'],
+                "priority": u_item['priority'],
+                "reason": u_item['reason'],
+                "estimated_net_profit": estimated_net_profit,
+                "associated_cost": associated_cost,
+                "impact_notes": "Estimated profit from selling these units if ordered."
+            })
+
+    # Process overstock items to find transfers or promote actions
+    for overstocked_item in overstocked_items:
+        source_store_id = overstocked_item['store_id']
+        product_id = overstocked_item['product_id']
+        excess_quantity = overstocked_item['excess_quantity']
+        
+        # If user filtered, ensure this overstocked item is part of the filter scope
+        if (store_id_filter and source_store_id != store_id_filter) or \
+           (product_id_filter and product_id != product_id_filter):
+            continue # Skip if not in filter scope
+
+        # Fetch product details for unit_cost and price
+        product_details = db.products.find_one({'product_id': product_id})
+        unit_cost = product_details.get('unit_cost', 0)
+        product_price = product_details.get('price', 0)
+
+        best_transfer_option = None
+        best_transfer_score = -1
+
+        # Search for potential target stores (understocked for the same product)
+        potential_targets = [
+            u_item for u_item in understocked_items 
+            if u_item['product_id'] == product_id and u_item['store_id'] != source_store_id and \
+               ((not store_id_filter) or u_item['store_id'] == store_id_filter)
+        ]
+
+        for target_item in potential_targets:
+            target_store_id = target_item['store_id']
+            needed_quantity = target_item['needed_quantity']
+            
+            qty_to_consider_transfer = min(excess_quantity, needed_quantity)
+
+            if qty_to_consider_transfer <= 0:
+                continue
+
+            try:
+                feasibility_data = get_transfer_feasibility_score(
+                    db, source_store_id, target_store_id, product_id, qty_to_consider_transfer
+                )
+                
+                final_score = feasibility_data['final_feasibility_score']
+
+                if final_score >= TRANSFER_VIABILITY_THRESHOLD and final_score > best_transfer_score:
+                    # Calculate financial impact for Transfer
+                    # Net Profit = Total Retail Value of transferred goods - Transfer Cost
+                    estimated_transfer_retail_value = product_price * qty_to_consider_transfer
+                    transfer_cost_actual = feasibility_data['calculated_transfer_cost']
+                    estimated_net_profit_transfer = round(estimated_transfer_retail_value - transfer_cost_actual, 2)
+                    
+                    best_transfer_option = {
+                        "action_type": "Transfer",
+                        "source_store_id": source_store_id,
+                        "target_store_id": target_store_id,
+                        "product_id": product_id,
+                        "suggested_quantity": qty_to_consider_transfer,
+                        "priority": overstocked_item['priority'], # Inherit priority from overstock level
+                        "reason": f"Overstocked at {source_store_id}, Understocked at {target_store_id}. Viability: {final_score}/100.",
+                        "transfer_details": feasibility_data, # Include all feasibility data
+                        "estimated_net_profit": estimated_net_profit_transfer,
+                        "associated_cost": transfer_cost_actual,
+                        "impact_notes": "Estimated profit after transfer cost and potential sales."
+                    }
+                    best_transfer_score = final_score
+            except ValueError as ve:
+                print(f"Skipping transfer feasibility for {product_id} from {source_store_id} to {target_store_id} due to: {ve}")
+            except Exception as e:
+                print(f"Unexpected error in transfer feasibility calc for {product_id} from {source_store_id} to {target_store_id}: {e}")
+        
+        if best_transfer_option:
+            final_remediation_list.append(best_transfer_option)
+        else:
+            # If no viable transfer found, default to 'Promote / Reduce' for the overstocked item
+            # Calculate financial impact for Promotion
+            # Net Profit = ( (Price * (1 - Discount)) - Unit Cost ) * Quantity
+            promotional_price = product_price * (1 - PROMOTION_DISCOUNT_PERCENTAGE)
+            profit_per_unit_promote = promotional_price - unit_cost
+            estimated_net_profit_promote = round(profit_per_unit_promote * excess_quantity, 2)
+            
+            # Associated cost for promotion is implicitly the revenue reduction from discount
+            # Or it could be viewed as the cost of holding the excess inventory if not sold quickly.
+            # For this context, let's assume associated_cost is the loss in revenue from discount.
+            associated_cost_promote = round((product_price * PROMOTION_DISCOUNT_PERCENTAGE) * excess_quantity, 2)
+            
+            final_remediation_list.append({
+                "store_id": source_store_id,
+                "product_id": product_id,
+                "current_stock": overstocked_item['current_stock'],
+                "optimal_target_level": overstocked_item['optimal_target_level'],
+                "delta": -overstocked_item['excess_quantity'], # Keep delta negative for overstock
+                "action_type": "Promote / Reduce",
+                "suggested_quantity": overstocked_item['excess_quantity'],
+                "priority": overstocked_item['priority'],
+                "reason": overstocked_item['reason'] + " No viable transfer option found.",
+                "estimated_net_profit": estimated_net_profit_promote,
+                "associated_cost": associated_cost_promote,
+                "impact_notes": f"Estimated profit at {PROMOTION_DISCOUNT_PERCENTAGE*100}% discount. Cost is estimated revenue loss."
+            })
 
     # Sort actions: High priority first, then medium, then low
     priority_order = {"high": 3, "medium": 2, "low": 1}
-    remediation_actions.sort(key=lambda x: priority_order.get(x['priority'], 0), reverse=True)
+    final_remediation_list.sort(key=lambda x: priority_order.get(x['priority'], 0), reverse=True)
 
-    return remediation_actions
+    return final_remediation_list
+
+def get_transfer_feasibility_score(db, source_store_id, target_store_id, product_id, transfer_quantity):
+    """
+    Calculates a feasibility score for transferring a product from a source store
+    to a target store based on distance, cost, and historical success rates.
+
+    Args:
+        db: MongoDB database instance.
+        source_store_id (str): ID of the store with overstock (where product ships from).
+        target_store_id (str): ID of the store with understock (where product ships to).
+        product_id (str): ID of the product to be transferred.
+        transfer_quantity (int): The number of units to be transferred.
+
+    Returns:
+        dict: Contains the final score, component scores, and breakdown.
+    Raises:
+        ValueError: If store/product/config data is missing, or quantity is invalid.
+    """
+    if transfer_quantity <= 0:
+        raise ValueError("Transfer quantity must be a positive integer.")
+
+    # Fetch necessary data
+    source_store = db.stores.find_one({'store_id': source_store_id})
+    target_store = db.stores.find_one({'store_id': target_store_id})
+    product_details = db.products.find_one({'product_id': product_id})
+    global_config = get_global_config(db) # Use the new helper function
+
+    if not source_store:
+        raise ValueError(f"Source store '{source_store_id}' not found.")
+    if not target_store:
+        raise ValueError(f"Target store '{target_store_id}' not found.")
+    if not product_details:
+        raise ValueError(f"Product '{product_id}' not found.")
+    
+    # Check transfer capacity
+    if not source_store.get('transfer_capacity', False):
+        raise ValueError(f"Source store '{source_store_id}' does not have transfer capacity.")
+    if not target_store.get('transfer_capacity', False):
+        raise ValueError(f"Target store '{target_store_id}' does not have transfer capacity.")
+
+    # Extract relevant data points
+    src_lat = source_store.get('latitude')
+    src_lon = source_store.get('longitude')
+    tgt_lat = target_store.get('latitude')
+    tgt_lon = target_store.get('longitude')
+    
+    unit_cost = product_details.get('unit_cost')
+    product_price = product_details.get('price') # Selling price
+    
+    shipping_cost_per_km = global_config.get('shipping_cost_per_km')
+    historical_transfer_success_rate = global_config.get('transfer_success_rate')
+
+    # Validate essential numerical data
+    if any(v is None for v in [src_lat, src_lon, tgt_lat, tgt_lon, unit_cost, product_price, shipping_cost_per_km, historical_transfer_success_rate]):
+         raise ValueError("Missing essential geographical, product cost, or global config data for transfer calculation. Ensure all fields are populated.")
+
+
+    # --- Calculation Steps ---
+
+    # 1. Calculate Haversine Distance (in km)
+    haversine_dist = calculate_haversine_distance(src_lat, src_lon, tgt_lat, tgt_lon)
+    
+    # Approximate road distance (e.g., 30% longer than straight line)
+    road_distance_km = haversine_dist * 1.3
+    
+    # Define a max plausible distance for scoring (adjust based on your typical store network)
+    # This acts as a normalization factor. A cross-country transfer would score very low.
+    MAX_PLAUSIBLE_DISTANCE_KM = 3000 
+
+    # 2. Calculate Transfer Cost
+    transfer_cost = road_distance_km * shipping_cost_per_km * transfer_quantity
+
+    # Define a max acceptable cost relative to product value for scoring
+    # This needs to be carefully chosen. E.g., if total product value is $1000, max cost could be $100 (10%)
+    # Or, define a flat maximum transfer cost. Let's make it relative to total product value.
+    # Max acceptable transfer cost as a percentage of total value being transferred
+    MAX_TRANSFER_COST_PERCENT_OF_VALUE = 0.15 # e.g., max 15% of total product value
+    max_acceptable_transfer_cost = (product_price * transfer_quantity) * MAX_TRANSFER_COST_PERCENT_OF_VALUE
+    # Ensure there's a floor for max_acceptable_transfer_cost to prevent division by zero or too high scores for cheap items
+    max_acceptable_transfer_cost = max(max_acceptable_transfer_cost, 10.0) # Minimum $10 acceptable cost
+
+    # 3. Generate Component Scores (0-100)
+    # Distance Score: Inverse relationship with distance. Higher score for shorter distance.
+    # We'll cap the distance effect to MAX_PLAUSIBLE_DISTANCE_KM. Distances beyond this will score 0.
+    distance_score = max(0, 100 - (road_distance_km / MAX_PLAUSIBLE_DISTANCE_KM) * 100)
+    
+    # Cost Score: Inverse relationship with cost. Higher score for lower cost relative to value.
+    # We'll compare transfer_cost to max_acceptable_transfer_cost.
+    # If transfer_cost is 0, score is 100. If it's MAX_TRANSFER_COST_PERCENT_OF_VALUE, score is 0.
+    cost_ratio = transfer_cost / max_acceptable_transfer_cost
+    cost_score = max(0, 100 - (cost_ratio * 100)) # If cost_ratio is 1 (max_acceptable_cost), score is 0.
+    
+    # Historical Success Rate Score: Directly used. Convert 0-1 to 0-100.
+    historical_success_score = historical_transfer_success_rate * 100
+
+    # 4. Calculate Final Score (Weighted Average)
+    final_score = (distance_score * 0.40) + (cost_score * 0.30) + (historical_success_score * 0.30)
+    final_score = round(final_score) # Round to nearest integer
+
+    # Determine viability category for UI
+    viability_category = "red" # <50
+    if final_score > 75:
+        viability_category = "green"
+    elif final_score >= 50: # 50-75
+        viability_category = "yellow"
+
+    return {
+        "source_store_id": source_store_id,
+        "target_store_id": target_store_id,
+        "product_id": product_id,
+        "transfer_quantity": transfer_quantity,
+        "calculated_distance_km": round(road_distance_km, 2),
+        "calculated_transfer_cost": round(transfer_cost, 2),
+        "distance_score": round(distance_score, 2),
+        "cost_score": round(cost_score, 2),
+        "historical_success_score": round(historical_success_score, 2),
+        "final_feasibility_score": final_score,
+        "viability_category": viability_category,
+        "notes": "Transfer feasibility based on distance, cost relative to product value, and historical success rates."
+    }
+

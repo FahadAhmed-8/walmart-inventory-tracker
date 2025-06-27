@@ -493,3 +493,131 @@
   font-size: 0.9em;
   margin-top: 5px;
 }
+
+/* Styling for the new Transfer Feasibility Results section */
+.transfer-results {
+  /* Inherits card/inventory-display styles, but can be customized */
+  background-color: #f7fcfc; /* A very light blue/green tint */
+  border: 1px solid #a7d9db;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 15px;
+}
+
+.transfer-results h3 {
+  color: #00796b; /* A darker teal for headings in this section */
+  margin-bottom: 10px;
+}
+
+/* Feasibility Score Badge Styling */
+.feasibility-score-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 15px;
+}
+
+.feasibility-score-summary h3 {
+  margin-bottom: 10px;
+  color: #333; /* Standard color, highlight-text will override */
+}
+
+.feasibility-badge {
+  padding: 10px 20px;
+  border-radius: 25px; /* Pill shape */
+  font-weight: bold;
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  text-align: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  cursor: help; /* Indicate it's hoverable for the tooltip */
+  margin-top: 5px;
+}
+
+/* Color-coding for feasibility badge */
+.feasibility-badge.green {
+  background-color: #4CAF50; /* Green - Highly Viable */
+}
+
+.feasibility-badge.yellow {
+  background-color: #FFC107; /* Yellow - Moderately Viable */
+  color: #333; /* Darker text for better contrast on yellow */
+}
+
+.feasibility-badge.red {
+  background-color: #F44336; /* Red - Not Viable */
+}
+
+/* Adjustments for input labels and fields if needed for new inputs */
+.input-group label input[type="number"] {
+  /* Specific styles for number inputs if desired */
+  -moz-appearance: textfield; /* Firefox number spinner removal */
+}
+.input-group label input[type="number"]::-webkit-outer-spin-button,
+.input-group label input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none; /* Chrome/Safari number spinner removal */
+  margin: 0;
+}
+
+/* Add this to frontend/src/App.css or index.css */
+
+.action-type-label.action-transfer {
+  background-color: #27ae60; /* Green for Transfer actions */
+}
+
+/* Add these to frontend/src/App.css or index.css */
+
+.action-impact-hover-card {
+  position: fixed;
+  left: 50px; /* TEMPORARY: Set a fixed left position */
+  top: 50px;  /* TEMPORARY: Set a fixed top position */
+  background-color: #333;
+  color: #fff;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 9999; /* TEMPORARY: Make sure it's on top */
+  pointer-events: none;
+  font-size: 0.9em;
+  max-width: 300px;
+  line-height: 1.4;
+  opacity: 1; /* TEMPORARY: Always visible */
+  /* transition: opacity 0.2s ease-in-out; /* Keep for later */
+}
+/* Make it visible when it has content (managed by React state) */
+.action-impact-hover-card.visible {
+    opacity: 1;
+}
+
+.action-impact-hover-card h4 {
+  color: #2ecc71; /* A nice green for the heading */
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1.1em;
+}
+
+.action-impact-hover-card p {
+  margin: 5px 0;
+}
+
+.action-impact-hover-card .impact-notes {
+  font-style: italic;
+  font-size: 0.85em;
+  color: #bbb;
+  margin-top: 10px;
+}
+
+/* Colors for profit/loss */
+.profit-positive {
+  color: #28a745; /* Green for profit */
+  font-weight: bold;
+}
+
+.profit-negative {
+  color: #dc3545; /* Red for loss */
+  font-weight: bold;
+}

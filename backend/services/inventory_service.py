@@ -736,3 +736,92 @@ def get_reorder_recommendation(db, ml_model, preprocessor, numerical_features, c
         "notes": "Recommendation based on ML demand forecast, lead time, and safety stock. Adjust parameters as needed."
     }
 
+
+def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id):
+    """
+    Calculates the optimal stocking level (target inventory) for a given product at a store,
+    incorporating forecasted demand, base safety stock, and supplier reliability.
+    
+    Args:
+        db: MongoDB database instance.
+        ml_model: The pre-trained machine learning model.
+        preprocessor: The pre-trained ColumnTransformer for feature preprocessing.
+        numerical_features: List of numerical feature names used during training.
+        categorical_features: List of categorical feature names used during training.
+        store_id (str): The ID of the store.
+        product_id (str): The ID of the product.
+    
+    Returns:
+        dict: A dictionary containing optimal stocking recommendations and breakdown.
+    Raises:
+        ValueError: If product or inventory record is not found, or ML components are missing.
+    """
+    if ml_model is None or preprocessor is None:
+        raise ValueError("ML model or preprocessor not loaded in the backend. Cannot calculate optimal stocking.")
+
+    inventory_record = db.inventory.find_one(
+        {'store_id': store_id, 'product_id': product_id}
+    )
+    if not inventory_record:
+        raise ValueError(f"Inventory record not found for Product ID: {product_id} at Store ID: {store_id}.")
+    
+    product_details = db.products.find_one({'product_id': product_id})
+    if not product_details:
+        raise ValueError(f"Product details not found for Product ID: {product_id}.")
+
+    current_stock = inventory_record.get('current_stock', 0)
+    base_safety_stock = product_details.get('base_safety_stock', 10) # Default to 10 if missing
+    supplier_category_reliability = product_details.get('supplier_category_reliability', 0.8) # Default to 0.8 if missing
+
+    # --- Calculations for Optimal Stocking ---
+    
+    # 1. Calculate reliability factor
+    # reliability_factor = 1.5 * (1 - product["supplier_category_reliability"])
+    reliability_factor = 1.5 * (1 - supplier_category_reliability)
+    
+    # 2. Calculate adjusted safety stock
+    # safety_stock = product["base_safety_stock"] * (1 + reliability_factor)
+    calculated_safety_stock = round(base_safety_stock * (1 + reliability_factor))
+
+    # 3. Get 30-day demand forecast
+    # We use the existing get_demand_forecast_data_ml function
+    # Note: For optimal stocking, we want to know demand for a future period (e.g., 30 days)
+    # to maintain sufficient stock, not just lead time.
+    forecast_days_for_optimal_stock = 30 # As per requirement
+    
+    # Pass current stock and last sold quantity as the most recent known values for the forecast model.
+    # The forecast function itself handles rolling predictions using these.
+    # However, since this calculation is about target *level* based on future demand,
+    # we just need the sum of the forecast over 30 days.
+    
+    # We might need to ensure get_demand_forecast_data_ml uses the *current* stock for its first day's prediction
+    # or ensure it's not affected by `last_units_sold` being derived from `predicted_demand` for the *next* day.
+    # For now, let's assume `get_demand_forecast_data_ml` gives a reasonable prediction for each day.
+    
+    forecast_data_30_days = get_demand_forecast_data_ml(
+        db, ml_model, preprocessor, numerical_features, categorical_features, 
+        store_id, product_id, num_days=forecast_days_for_optimal_stock
+    )
+    
+    total_30_day_forecasted_demand = sum([f['predicted_demand'] for f in forecast_data_30_days])
+
+    # 4. Calculate target inventory level
+    # target_inventory_level = (30-day demand forecast sum) + calculated_safety_stock
+    target_inventory_level = total_30_day_forecasted_demand + calculated_safety_stock
+    
+    # Ensure target is not negative
+    target_inventory_level = max(0, target_inventory_level)
+
+    return {
+        "product_id": product_id,
+        "store_id": store_id,
+        "current_stock": current_stock,
+        "base_safety_stock": base_safety_stock,
+        "supplier_category_reliability": supplier_category_reliability,
+        "reliability_factor": round(reliability_factor, 2),
+        "calculated_safety_stock": calculated_safety_stock,
+        "total_30_day_forecasted_demand": total_30_day_forecasted_demand,
+        "target_inventory_level": target_inventory_level,
+        "optimal_stocking_notes": "Target inventory based on 30-day forecast and adjusted safety stock considering supplier reliability."
+    }
+

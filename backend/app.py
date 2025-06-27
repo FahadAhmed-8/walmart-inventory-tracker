@@ -21,7 +21,8 @@ from services.inventory_service import (
     get_low_stock_alerts_data,
     get_overstocked_products_data,
     get_demand_forecast_data_ml, # Re-import the updated ML-driven forecast function
-    get_reorder_recommendation # NEW: Import reorder recommendation function
+    get_reorder_recommendation, # NEW: Import reorder recommendation function
+    get_optimal_stocking_data
 )
 
 app = Flask(__name__)
@@ -385,14 +386,57 @@ def get_reorder_recommendations_api():
         print(f"Error generating reorder recommendation: {e}")
         return jsonify({"error": f"An unexpected error occurred during reorder recommendation: {str(e)}"}), 500
 
+@app.route('/inventory/optimal_stocking', methods=['GET']) # NEW ENDPOINT
+def get_optimal_stocking_api():
+    """
+    Provides optimal stocking level recommendations for a specific product at a given store.
+
+    Query Parameters:
+    - `store_id`: Required.
+    - `product_id`: Required.
+    """
+    store_id = request.args.get('store_id')
+    product_id = request.args.get('product_id')
+
+    if not store_id or not product_id:
+        return jsonify({"error": "Missing 'store_id' or 'product_id' for optimal stocking calculation."}), 400
+
+    if GLOBAL_ML_MODEL is None or GLOBAL_PREPROCESSOR is None:
+        return jsonify({"error": "ML model or preprocessor not loaded. Cannot calculate optimal stocking."}), 500
+
+    try:
+        db = get_db()
+        optimal_stock_data = get_optimal_stocking_data(
+            db,
+            GLOBAL_ML_MODEL,
+            GLOBAL_PREPROCESSOR,
+            GLOBAL_NUMERICAL_FEATURES,
+            GLOBAL_CATEGORICAL_FEATURES,
+            store_id,
+            product_id
+        )
+        return jsonify(optimal_stock_data), 200
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        print(f"Error generating optimal stocking recommendation: {e}")
+        return jsonify({"error": f"An unexpected error occurred during optimal stocking calculation: {str(e)}"}), 500
 
 # --- Running the Flask Application ---
 if __name__ == '__main__':
     try:
-        connect_to_mongodb()
+        db_instance = connect_to_mongodb() # Get the connected DB instance
+        
+        # Check if the inventory collection is empty before loading initial data
+        if db_instance.inventory.count_documents({}) == 0:
+            print("Database appears empty. Starting initial data load...")
+            load_initial_inventory_data(db_instance) # Load data using the connected DB instance
+            print("Initial data load completed.")
+        else:
+            print("Database already contains data. Skipping initial data load.")
+
     except Exception as e:
-        print(f"Application startup aborted due to MongoDB connection error: {e}")
+        print(f"Application startup aborted due to MongoDB connection error or initial data load error: {e}")
         exit(1)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
-

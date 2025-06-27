@@ -140,6 +140,23 @@ export const getReorderRecommendation = async (storeId, productId) => {
   }
 };
 
+export const getOptimalStocking = async (storeId, productId) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/optimal_stocking`);
+    url.searchParams.append('store_id', storeId);
+    url.searchParams.append('product_id', productId);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching optimal stocking data:", error);
+    throw error;
+  }
+};
 
 export const uploadSalesCSV = async (file) => {
   try {

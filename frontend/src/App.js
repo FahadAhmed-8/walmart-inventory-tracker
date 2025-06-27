@@ -4,6 +4,7 @@ import './App.css';
 import InventoryActionsPage from './pages/InventoryActionsPage';
 import AlertsAndOverstockPage from './pages/AlertsAndOverstockPage';
 import DemandForecastPage from './pages/DemandForecastPage'; // NEW: Import DemandForecastPage
+import OptimalStockingPage from './pages/OptimalStockingPage';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('inventoryActions');
@@ -41,6 +42,14 @@ function App() {
             clearMessages={clearMessages}
           />
         );
+      case 'optimalStocking': // NEW Case for Optimal Stocking Page
+        return (
+          <OptimalStockingPage
+            setMessage={setMessage}
+            setError={setError}
+            clearMessages={clearMessages}
+          />
+        );
       default:
         return (
           <InventoryActionsPage
@@ -56,26 +65,32 @@ function App() {
     <div className="App">
       <h1>Walmart Inventory Tracker</h1>
 
-      <nav className="main-nav">
-        <button
-          onClick={() => setCurrentPage('inventoryActions')}
-          className={currentPage === 'inventoryActions' ? 'active' : ''}
-        >
-          Inventory Operations
-        </button>
-        <button
-          onClick={() => setCurrentPage('alertsAndOverstock')}
-          className={currentPage === 'alertsAndOverstock' ? 'active' : ''}
-        >
-          Insights & Alerts
-        </button>
-        <button
-          onClick={() => setCurrentPage('demandForecast')} // NEW Button
-          className={currentPage === 'demandForecast' ? 'active' : ''}
-        >
-          Demand Forecast
-        </button>
-      </nav>
+  <nav className="main-nav">
+    <button
+      onClick={() => setCurrentPage('inventoryActions')}
+      className={currentPage === 'inventoryActions' ? 'active' : ''}
+    >
+      Inventory Operations
+    </button>
+    <button
+      onClick={() => setCurrentPage('alertsAndOverstock')}
+      className={currentPage === 'alertsAndOverstock' ? 'active' : ''}
+    >
+      Insights & Alerts
+    </button>
+    <button
+      onClick={() => setCurrentPage('demandForecast')}
+      className={currentPage === 'demandForecast' ? 'active' : ''}
+    >
+      Demand Forecast
+    </button>
+    <button
+      onClick={() => setCurrentPage('optimalStocking')} // NEW Button
+      className={currentPage === 'optimalStocking' ? 'active' : ''}
+    >
+      Optimal Stocking
+    </button>
+  </nav>
 
       {message && <div className="message success">{message}</div>}
       {error && <div className="message error">{error}</div>}

@@ -343,3 +343,60 @@
         min-width: unset;
       }
     }
+
+    /* Specific styling for optimal stocking results display */
+.optimal-stocking-results {
+  /* You can add specific styles here if needed, 
+     e.g., a slightly different background or border color */
+  background-color: #e8f5e9; /* A very light green tint */
+  border-color: #81c784; /* A slightly greener border */
+  box-shadow: 0 4px 15px rgba(0, 150, 0, 0.1); /* Subtle green shadow */
+}
+
+/* Ensure the highlight-text is always vibrant */
+.highlight-text {
+  color: #007bff; /* Primary blue for highlights, ensures consistency */
+  font-weight: bold;
+}
+
+/* Reorder recommendation display specific styles */
+.reorder-display .highlight-text {
+  color: #3498db; /* A distinct blue for reorder highlights */
+  font-weight: bold;
+}
+.reorder-display p {
+  margin: 5px 0;
+  line-height: 1.5;
+}
+/* Ensure spacing for specific messages */
+.no-forecast-message,
+.no-reorder-message {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+  font-style: italic;
+  color: #7f8c8d;
+  background-color: #f8f8f8;
+  border: 1px dashed #ccc;
+}
+
+/* General button styling adjustments if needed for overall consistency */
+.input-group button,
+.main-nav button {
+  /* Ensure consistent padding and margin for buttons across pages */
+  margin-right: 15px; /* Adjust as needed */
+  margin-bottom: 10px; /* For wrapped buttons */
+  padding: 12px 20px;
+  font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+  .input-group button,
+  .main-nav button {
+    width: auto; /* Allow buttons to size naturally */
+    flex-grow: 1; /* Allow them to grow if space available */
+    margin-right: 0; /* Remove horizontal margin when stacked */
+  }
+}
+

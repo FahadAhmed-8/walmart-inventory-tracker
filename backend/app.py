@@ -6,6 +6,7 @@ import pandas as pd # Needed for batch CSV processing in routes
 import datetime # Needed for timestamp handling if CSV parsing happens here
 import joblib # For saving/loading models
 import os # For pathing to ML models
+import sys # NEW: Import sys to access command-line arguments
 
 # Import MongoDB client functions
 from db_client import get_db, connect_to_mongodb
@@ -22,7 +23,8 @@ from services.inventory_service import (
     get_overstocked_products_data,
     get_demand_forecast_data_ml, # Re-import the updated ML-driven forecast function
     get_reorder_recommendation, # NEW: Import reorder recommendation function
-    get_optimal_stocking_data
+    get_optimal_stocking_data,
+    get_remediation_actions # NEW: Import the new function
 )
 
 app = Flask(__name__)
@@ -422,13 +424,52 @@ def get_optimal_stocking_api():
         print(f"Error generating optimal stocking recommendation: {e}")
         return jsonify({"error": f"An unexpected error occurred during optimal stocking calculation: {str(e)}"}), 500
 
+@app.route('/inventory/remediation_actions', methods=['GET']) # NEW ENDPOINT
+def get_remediation_actions_api():
+    """
+    Retrieves a prioritized list of suggested remediation actions (order/promote)
+    for understocked or overstocked products.
+
+    Query Parameters (optional):
+    - `store_id`: Filter actions for a specific store.
+    - `product_id`: Filter actions for a specific product.
+    """
+    store_id = request.args.get('store_id')
+    product_id = request.args.get('product_id')
+
+    if GLOBAL_ML_MODEL is None or GLOBAL_PREPROCESSOR is None:
+        return jsonify({"error": "ML model or preprocessor not loaded. Cannot generate remediation actions."}), 500
+
+    try:
+        db = get_db()
+        remediation_actions = get_remediation_actions(
+            db,
+            GLOBAL_ML_MODEL,
+            GLOBAL_PREPROCESSOR,
+            GLOBAL_NUMERICAL_FEATURES,
+            GLOBAL_CATEGORICAL_FEATURES,
+            store_id_filter=store_id, # Pass optional filters
+            product_id_filter=product_id # Pass optional filters
+        )
+        return jsonify(remediation_actions), 200
+    except Exception as e:
+        print(f"Error generating remediation actions: {e}")
+        return jsonify({"error": f"An unexpected error occurred during remediation action calculation: {str(e)}"}), 500
+
 # --- Running the Flask Application ---
 if __name__ == '__main__':
+    # Check for a command-line argument to force database reload
+    force_db_reload = '--force-db-reload' in sys.argv
+
     try:
         db_instance = connect_to_mongodb() # Get the connected DB instance
         
-        # Check if the inventory collection is empty before loading initial data
-        if db_instance.inventory.count_documents({}) == 0:
+        if force_db_reload:
+            print("Force DB reload requested. Dropping existing collections and loading initial data...")
+            # The load_initial_inventory_data function itself handles dropping existing collections
+            load_initial_inventory_data(db_instance) 
+            print("Forced initial data load completed.")
+        elif db_instance.inventory.count_documents({}) == 0:
             print("Database appears empty. Starting initial data load...")
             load_initial_inventory_data(db_instance) # Load data using the connected DB instance
             print("Initial data load completed.")

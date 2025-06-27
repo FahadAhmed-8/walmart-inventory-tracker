@@ -1,5 +1,5 @@
-{"store_id": "S001", "region": "North", "name": "Store S001"}
-{"store_id": "S002", "region": "South", "name": "Store S002"}
-{"store_id": "S003", "region": "South", "name": "Store S003"}
-{"store_id": "S004", "region": "South", "name": "Store S004"}
-{"store_id": "S005", "region": "West", "name": "Store S005"}
+{"store_id": "S001", "region": "North", "name": "Store S001", "latitude": 37.6704, "longitude": -86.0377, "transfer_capacity": false}
+{"store_id": "S002", "region": "South", "name": "Store S002", "latitude": 35.8795, "longitude": -101.7958, "transfer_capacity": false}
+{"store_id": "S003", "region": "South", "name": "Store S003", "latitude": 30.6827, "longitude": -113.4124, "transfer_capacity": false}
+{"store_id": "S004", "region": "South", "name": "Store S004", "latitude": 37.1571, "longitude": -103.5244, "transfer_capacity": true}
+{"store_id": "S005", "region": "West", "name": "Store S005", "latitude": 30.4202, "longitude": -104.3304, "transfer_capacity": false}

@@ -400,3 +400,96 @@
   }
 }
 
+/* Styling for the new Remediation Actions section */
+.remediation-actions-display {
+  /* Inherits card styles, but can be customized */
+  border-left: 5px solid #2ecc71; /* A green accent for proactive actions */
+  padding-left: 20px;
+}
+
+.remediation-actions-display h2 {
+  color: #27ae60; /* Slightly darker green heading */
+}
+
+.remediation-list {
+  /* Inherits alert-list styles, but can be customized */
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.action-item {
+  /* Base style for individual action items */
+  border-left: 5px solid; /* Will be set by priority class */
+  margin-bottom: 10px;
+  padding: 10px 15px;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+.action-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Priority specific colors */
+.action-item.priority-high {
+  border-color: #e74c3c; /* Red for high priority */
+  background-color: #fcebeb;
+}
+
+.action-item.priority-medium {
+  border-color: #f39c12; /* Orange for medium priority */
+  background-color: #fff8e1;
+}
+
+.action-item.priority-low {
+  border-color: #3498db; /* Blue for low priority */
+  background-color: #eaf4fa;
+}
+
+/* Action type labels */
+.action-type-label {
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: white;
+  margin-left: 8px;
+  display: inline-block;
+}
+
+.action-type-label.action-order {
+  background-color: #3498db; /* Blue for Order */
+}
+
+.action-type-label.action-promote {
+  background-color: #e67e22; /* Orange for Promote */
+}
+
+.priority-label {
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: white;
+  margin-left: 5px;
+  font-size: 0.9em;
+}
+
+.priority-label.high {
+  background-color: #c0392b; /* Darker red */
+}
+
+.priority-label.medium {
+  background-color: #d35400; /* Darker orange */
+}
+
+.priority-label.low {
+  background-color: #2980b9; /* Darker blue */
+}
+
+.alert-reason-text {
+  font-style: italic;
+  color: #666;
+  font-size: 0.9em;
+  margin-top: 5px;
+}

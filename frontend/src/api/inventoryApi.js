@@ -158,6 +158,28 @@ export const getOptimalStocking = async (storeId, productId) => {
   }
 };
 
+export const getRemediationActions = async (storeId = '', productId = '') => {
+  try {
+    const url = new URL(`${API_BASE_URL}/remediation_actions`);
+    if (storeId) {
+      url.searchParams.append('store_id', storeId);
+    }
+    if (productId) {
+      url.searchParams.append('product_id', productId);
+    }
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching remediation actions:", error);
+    throw error;
+  }
+};
+
 export const uploadSalesCSV = async (file) => {
   try {
     const formData = new FormData();

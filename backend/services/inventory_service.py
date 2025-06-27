@@ -645,7 +645,6 @@ def get_demand_forecast_data_ml(db, ml_model, preprocessor, numerical_features, 
 
     return forecast_data
 
-
 def get_reorder_recommendation(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id):
     """
     Calculates reorder recommendations (quantity, order date, delivery date)
@@ -736,7 +735,6 @@ def get_reorder_recommendation(db, ml_model, preprocessor, numerical_features, c
         "notes": "Recommendation based on ML demand forecast, lead time, and safety stock. Adjust parameters as needed."
     }
 
-
 def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, categorical_features, store_id, product_id):
     """
     Calculates the optimal stocking level (target inventory) for a given product at a store,
@@ -825,3 +823,102 @@ def get_optimal_stocking_data(db, ml_model, preprocessor, numerical_features, ca
         "optimal_stocking_notes": "Target inventory based on 30-day forecast and adjusted safety stock considering supplier reliability."
     }
 
+def get_remediation_actions(db, ml_model, preprocessor, numerical_features, categorical_features, store_id_filter=None, product_id_filter=None):
+    """
+    Generates a prioritized list of remediation actions (order or promote)
+    for understocked or overstocked products based on optimal stocking levels.
+
+    Args:
+        db: MongoDB database instance.
+        ml_model: The pre-trained machine learning model.
+        preprocessor: The pre-trained ColumnTransformer for feature preprocessing.
+        numerical_features: List of numerical feature names used during training.
+        categorical_features: List of categorical feature names used during training.
+        store_id_filter (str, optional): Filter actions for a specific store.
+        product_id_filter (str, optional): Filter actions for a specific product.
+
+    Returns:
+        list: A list of dictionaries, each representing a recommended action.
+    """
+    remediation_actions = []
+    
+    query = {}
+    if store_id_filter:
+        query['store_id'] = store_id_filter
+    if product_id_filter:
+        query['product_id'] = product_id_filter
+
+    # Iterate through all relevant inventory items
+    for inventory_item in db.inventory.find(query):
+        store_id = inventory_item['store_id']
+        product_id = inventory_item['product_id']
+        current_stock = inventory_item.get('current_stock', 0)
+
+        try:
+            # Get optimal stocking data for this product-store pair
+            optimal_stocking_data = get_optimal_stocking_data(
+                db, ml_model, preprocessor, numerical_features, categorical_features,
+                store_id, product_id
+            )
+            optimal_target_level = optimal_stocking_data['target_inventory_level']
+            
+            # Calculate the Delta: optimal_stock - current_stock
+            # Positive delta = understock (need to order)
+            # Negative delta = overstock (need to promote/reduce)
+            delta = optimal_target_level - current_stock
+
+            action_type = None
+            suggested_quantity = 0
+            priority = "low" # Default priority
+            reason = ""
+
+            if delta > 0: # Understock situation
+                action_type = "Order"
+                suggested_quantity = delta
+                reason = f"Current stock ({current_stock}) is below optimal target ({optimal_target_level})."
+                if suggested_quantity > 50: # High priority for significant shortages
+                    priority = "high"
+                elif suggested_quantity > 10: # Medium priority for moderate shortages
+                    priority = "medium"
+                else:
+                    priority = "low" # Small shortages
+
+            elif delta < 0: # Overstock situation
+                action_type = "Promote / Reduce"
+                suggested_quantity = abs(delta) # Quantity to reduce/promote
+                reason = f"Current stock ({current_stock}) is above optimal target ({optimal_target_level})."
+                # For overstock, priority could be based on magnitude or cost of holding
+                if suggested_quantity > 100:
+                    priority = "high"
+                elif suggested_quantity > 30:
+                    priority = "medium"
+                else:
+                    priority = "low"
+            
+            if action_type: # Only add if an action is determined
+                remediation_actions.append({
+                    "store_id": store_id,
+                    "product_id": product_id,
+                    "current_stock": current_stock,
+                    "optimal_target_level": optimal_target_level,
+                    "delta": delta,
+                    "action_type": action_type,
+                    "suggested_quantity": suggested_quantity,
+                    "priority": priority,
+                    "reason": reason,
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+
+        except ValueError as ve:
+            print(f"Skipping {product_id}@{store_id} due to data error: {ve}")
+            # This handles cases where optimal_stocking_data can't be fetched (e.g., missing product details)
+            continue
+        except Exception as e:
+            print(f"An unexpected error occurred for {product_id}@{store_id}: {e}")
+            continue
+
+    # Sort actions: High priority first, then medium, then low
+    priority_order = {"high": 3, "medium": 2, "low": 1}
+    remediation_actions.sort(key=lambda x: priority_order.get(x['priority'], 0), reverse=True)
+
+    return remediation_actions

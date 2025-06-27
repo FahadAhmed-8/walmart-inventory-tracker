@@ -62,7 +62,8 @@ def prepare_firestore_data(csv_path):
                 'name': f"Product {product_id}", # Mock name
                 'min_replenish_time': random.randint(3, 20), # Random replenishment time (3-20 days)
                 'base_safety_stock': calculated_base_safety_stock, # NEW: Derived base safety stock
-                'supplier_category_reliability': round(random.uniform(0.7, 0.99), 2) # NEW: Random reliability (0.7 to 0.99)
+                'supplier_category_reliability': round(random.uniform(0.7, 0.99), 2), # NEW: Random reliability (0.7 to 0.99)
+                'unit_cost': round(float(product_row['Price']) * random.uniform(0.5, 0.8), 2) # NEW: Random unit cost (50-80% of price)
             }
         products_list = list(products_data.values())
         print(f"Prepared {len(products_list)} unique products.")
@@ -75,7 +76,10 @@ def prepare_firestore_data(csv_path):
                 stores_data[store_id] = {
                     'store_id': store_id,
                     'region': row['Region'],
-                    'name': f"Store {store_id}" # Mock name
+                    'name': f"Store {store_id}", # Mock name
+                    'latitude': round(random.uniform(30.0, 45.0), 4), # NEW: Random latitude
+                    'longitude': round(random.uniform(-120.0, -70.0), 4), # NEW: Random longitude
+                    'transfer_capacity': random.choice([True, False]) # NEW: Random boolean for transfer capacity   
                 }
         stores_list = list(stores_data.values())
         print(f"Prepared {len(stores_list)} unique stores.")
@@ -97,6 +101,16 @@ def prepare_firestore_data(csv_path):
             }
         inventory_list = list(inventory_items.values())
         print(f"Prepared {len(inventory_list)} unique inventory items.")
+
+        # --- Prepare Global Configuration Data ---
+        global_config_data = {
+            'config_id': 'default_config', # A fixed ID for the single config document
+            'shipping_cost_per_km': round(random.uniform(0.5, 1.5), 2), # e.g., $0.50 to $1.50 per unit per km
+            'transfer_success_rate': round(random.uniform(0.85, 0.99), 2), # e.g., 85% to 99% success rate
+            'current_lead_time_override': 0 # Default to 0, for emergencies
+        }
+        global_config_list = [global_config_data] # Wrap in list for write_ndjson function
+        print(f"Prepared global configuration data.")
 
         def write_ndjson(data_list, filename):
             with open(filename, 'w') as f:
@@ -152,8 +166,9 @@ def prepare_firestore_data(csv_path):
         write_ndjson(products_list, os.path.join(output_dir, 'products.json'))
         write_ndjson(stores_list, os.path.join(output_dir, 'stores.json'))
         write_ndjson(inventory_list, os.path.join(output_dir, 'inventory.json'))
+        write_ndjson(global_config_list, os.path.join(output_dir, 'global_config.json')) # NEW: Write global_config
 
-        print(f"\nSuccessfully generated products.json, stores.json, and inventory.json in the {output_dir} directory.")
+        print(f"\nSuccessfully generated products.json, stores.json, inventory.json, and global_config.json in the {output_dir} directory.")
     except Exception as e:
         print(f"An error occurred during data preparation: {e}")
         import traceback
